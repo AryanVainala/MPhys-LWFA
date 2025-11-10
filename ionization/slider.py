@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Nov 4 21:35:04 2025
+Created on Tue Oct 28 21:35:04 2025
 
 @author: aryan
 """
@@ -10,18 +10,15 @@ from openpmd_viewer import OpenPMDTimeSeries
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
-from scipy.constants import c, e, m_e, epsilon_0
 
 ts = OpenPMDTimeSeries('./diags/hdf5')
 
-# Simulation parameters (from lwfa_script.py)
-lambda0 = 0.8e-6      # Laser wavelength
-n_e = 4.e18*1.e6      # Plasma density
-omega_p = np.sqrt(n_e * e**2 / (m_e * epsilon_0))
-lambda_p = 2*np.pi*c/omega_p
-
+# Get available iterations
 iterations = ts.iterations
-initial_iteration = iterations[len(iterations)//2]
+
+# Initial iteration
+# initial_iteration = iterations[len(iterations)//2]
+initial_iteration = iterations[0]
 
 fig, ax = plt.subplots(figsize=(10, 6))
 plt.subplots_adjust(bottom=0.15)
@@ -35,13 +32,10 @@ def update_plot(iteration):
     z = info_rho.z
     r = info_rho.r
     
-    # Get plasma wake (mode 0 - axisymmetric)
-    E_plasma, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, m=0, slice_across='r')
-    
-    # Get laser field (mode 1 - linearly polarized)
-    E_laser, _ = ts.get_field(field='E', coord='z', iteration=iteration, m=1, slice_across='r')
-    
+    # Get E_z field
+    E_z, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration)
     z_E = info_Ez.z
+    E_z_line = E_z[0, :]  # On-axis
     
     # Clear axes
     ax.clear()
@@ -59,7 +53,7 @@ def update_plot(iteration):
     
     if not hasattr(fig, 'cbar'):
         fig.cbar = fig.colorbar(im, ax=ax)
-        fig.cbar.set_label(r'$\rho$ (C/m$^3$)')
+        fig.cbar.set_label(r'$\rho$ (SI)')
     else:
         fig.cbar.update_normal(im)
     
@@ -67,14 +61,11 @@ def update_plot(iteration):
     ax.set_ylabel('r (m)')
     ax.set_title(f'Iteration: {iteration}')
     
-    # Plot E_z components
+    # Plot E_z on second axis
     ax.ax2 = ax.twinx()
-    ax.ax2.plot(z_E, E_laser, 'red', linewidth=1.5, label='Laser (m=1)', alpha=0.7)
-    ax.ax2.plot(z_E, E_plasma, 'royalblue', alpha=0.75, linewidth=2.0, label='Plasma Wake (m=0)')
-    ax.ax2.axhline(0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+    ax.ax2.plot(z_E, E_z_line, color='red', linewidth=1.5)
     ax.ax2.set_ylabel(r'$E_z$ (V/m)', color='red')
     ax.ax2.tick_params(axis='y', labelcolor='red')
-    ax.ax2.legend(loc='upper right')
     
     fig.canvas.draw_idle()
 

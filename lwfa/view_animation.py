@@ -26,7 +26,7 @@ rho_initial, info = ts.get_field(iteration=ts.iterations[0], field='rho', specie
 im = ax.imshow(rho_initial,
                origin='lower',
                extent=info.imshow_extent,
-               cmap='viridis',
+               cmap='greens',
                aspect='auto') # 'auto' aspect ratio is good for long simulations
 
 # Add a colorbar and labels
@@ -79,4 +79,4 @@ anim = FuncAnimation(fig, update, frames=len(ts.iterations), interval=100, blit=
 # Display the animation
 plt.show()
 
-anim.save("test.gif", writer="pillow")
+# anim.save("test.gif", writer="pillow")

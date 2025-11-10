@@ -35,7 +35,7 @@ im = ax.imshow(
     extent=[z.min(), z.max(), r.min(), r.max()],
     origin='lower',
     aspect='auto',
-    cmap='viridis'
+    cmap='Greens_r'
 )
 cbar = fig.colorbar(im, ax=ax)
 cbar.set_label(r'$\rho$ (SI)')

@@ -66,17 +66,6 @@ w0 = 5.e-6       # Laser waist
 tau = 16.e-15    # Laser duration
 z0 = 15.e-6      # Laser centroid
 
-
-# The particles
-p_zmin = 30.e-6  # Position of the beginning of the plasma (meters)
-p_zmax = 500.e-6 # Position of the end of the plasma (meters)
-p_rmax = 18.e-6  # Maximal radial position of the plasma (meters)
-n_e = 4.e18*1.e6 # Density (electrons.meters^-3)
-p_nz = 2         # Number of particles per cell along z
-p_nr = 2         # Number of particles per cell along r
-p_nt = 4         # Number of particles per cell along theta
-
-
 # Frequencies, wave numbers, wavelengths
 omega_l  = 2*np.pi*c/lambda0                                       # laser angular frequency [rad/s]
 omega_p = np.sqrt( n_e * e**2 / ( m_e * epsilon_0 ) )           # plasma angular frequency [rad/s]
@@ -97,7 +86,7 @@ ZR = np.pi*w0**2/lambda0                    # Rayleigh length
 Pc = 17e9 * (omega_l/omega_p)**2            # [W]  (Pc ≈ 17 GW * nc/ne)
 
 # Dephasing length
-Np = 1                                                                          # Number of 
+Np = 1                                                                          # Number of cycles behind pulse
 Ld_lin  = (lambda_p**3 / (2 * lambda0**2))                                      # [m]  short-pulse linear estimate
 Ld_bub  = (lambda_p**3 / (2 * lambda0**2)) * a0 * (np.sqrt(2)/np.pi) / Np       # [m]  blowout estimate (a0 ≳ 2–4)
 
@@ -133,7 +122,7 @@ Nr_req = math.ceil(Lr / dr_target)
 # Defining the number of grid points
 Nz = Nz_req      # Number of gridpoints along z
 Nr = Nr_req      # Number of gridpoints along r
-Nm = 2           # Number of modes used
+Nm = 3           # Number of modes used
 
 
 # The simulation timestep
