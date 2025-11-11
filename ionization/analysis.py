@@ -13,6 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from openpmd_viewer import OpenPMDTimeSeries
+from openpmd_viewer.addons import LpaDiagnostics
 from scipy.constants import c, e, m_e, epsilon_0, pi
 import os
 import sys
@@ -115,9 +116,11 @@ print("\nAll data directories verified!\n")
 
 print("Loading OpenPMD time series...")
 ts_data = {}
+lpa_data = {}
 for gas, path in data_dirs.items():
     print(f"  Loading {gas_labels[gas]}...")
     ts_data[gas] = OpenPMDTimeSeries(path)
+    lpa_data[gas] = LpaDiagnostics(path)
 
 print("\nData loaded successfully!\n")
 
@@ -159,8 +162,8 @@ for gas in ['H', 'He', 'N']:
     
     # Filter for accelerated electrons only (exclude bulk plasma)
     # Bulk plasma has gamma ~ 1, accelerated electrons have gamma >> 1
-    # Use threshold of 10 MeV to separate accelerated from bulk
-    E_threshold = 10.0  # MeV
+    # Use threshold of 0 MeV to separate accelerated from bulk
+    E_threshold = 0.0  # MeV
     mask = E_MeV > E_threshold
     
     E_accelerated = E_MeV[mask]
@@ -178,7 +181,7 @@ for gas in ['H', 'He', 'N']:
     # Create weighted histogram
     # Bin edges from 0 to max energy, with fine resolution
     E_max = max(E_MeV.max(), 200)  # At least 200 MeV range
-    bins = np.linspace(0, E_max, 100)
+    bins = np.linspace(0, E_max, 200)
     
     # Weight by particle weight for correct charge representation
     hist, bin_edges = np.histogram(E_accelerated, bins=bins, weights=w_accelerated)
@@ -188,7 +191,7 @@ for gas in ['H', 'He', 'N']:
     hist_norm = hist / (bin_width * np.sum(hist))
     
     # Bin centers for plotting
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     
     # Plot
     ax1.plot(bin_centers, hist_norm, 
@@ -232,54 +235,57 @@ fig2, ax2 = plt.subplots(figsize=(12, 6))
 
 for gas in ['H', 'He', 'N']:
     print(f"\nProcessing {gas_labels[gas]}...")
+    lpa = lpa_data[gas]
     ts = ts_data[gas]
     
-    # Select middle iteration for representative snapshot
+    # Get all iterations and corresponding times
     iterations = ts.iterations
-    mid_idx = len(iterations) // 2
-    mid_iteration = iterations[mid_idx]
-    print(f"  Using iteration: {mid_iteration} (index {mid_idx}/{len(iterations)})")
+    times = ts.t
     
-    # Get transverse electric field Er (contains laser)
-    # The laser is primarily in Er for linearly polarized mode
-    Er, info_Er = ts.get_field(field='E', coord='r', iteration=mid_iteration, m=1)
+    print(f"  Total iterations: {len(iterations)}")
+    print(f"  Time range: {times[0]:.2e} to {times[-1]:.2e} s")
     
-    z = info_Er.z
-    r = info_Er.r
+    # Calculate a0 for each iteration
+    a0_values = []
+    z_positions = []
     
-    print(f"  Field shape: {Er.shape}")
-    print(f"  z range: {z.min()*1e6:.2f} to {z.max()*1e6:.2f} µm")
-    print(f"  r range: {r.min()*1e6:.2f} to {r.max()*1e6:.2f} µm")
+    for i, iteration in enumerate(iterations):
+        try:
+            # Get a0 at this iteration (polarization is 'x' for linear polarization)
+            a0 = lpa.get_a0(iteration=iteration, pol='x')
+            
+            # Calculate effective propagation distance
+            # In moving window: z_prop = c * t (laser has propagated this far)
+            z_prop = c * times[i]
+            
+            a0_values.append(a0)
+            z_positions.append(z_prop * 1e6)  # Convert to µm
+            
+        except Exception as e:
+            print(f"  Warning: Could not get a0 for iteration {iteration}: {e}")
+            continue
     
-    # Convert Er to normalized amplitude a0
-    # a0 = e * Er / (m_e * omega_l * c)
-    omega_l = 2 * pi * c / lambda0
-    a_field = np.abs(e * Er / (m_e * omega_l * c))
-    
-    # Find peak a0 along axis for each z position
-    # Take maximum over r at each z
-    a0_peak = np.max(a_field, axis=0)
-    
-    print(f"  Peak a₀ range: {a0_peak.min():.3f} to {a0_peak.max():.3f}")
+    print(f"  Successfully processed {len(a0_values)} iterations")
+    print(f"  a₀ range: {min(a0_values):.3f} to {max(a0_values):.3f}")
+    print(f"  Propagation distance: {min(z_positions):.1f} to {max(z_positions):.1f} µm")
     
     # Plot
-    ax2.plot(z * 1e6, a0_peak,
+    ax2.plot(z_positions, a0_values,
              label=gas_labels[gas],
              color=gas_colors[gas],
              linewidth=2.5,
-             alpha=0.8)
+             alpha=0.8,
+             marker='o',
+             markersize=4,
+             markevery=2)
 
 # Add theoretical length scales
-# ax2.axvline(L_d * 1e6, color='black', linestyle='--', linewidth=2, 
-#            alpha=0.7, label=f'Dephasing ($L_d$ = {L_d*1e6:.0f} µm)')
-# ax2.axvline(L_pd * 1e6, color='gray', linestyle=':', linewidth=2,
-#            alpha=0.7, label=f'Pump Depletion ($L_{{pd}}$ = {L_pd*1e6:.0f} µm)')
 
 # Formatting
 ax2.set_xlabel('Propagation Distance $z$ (µm)', fontsize=12, fontweight='bold')
 ax2.set_ylabel('Peak Normalized Amplitude $a_0$', fontsize=12, fontweight='bold')
-ax2.set_title('On-Axis Laser Amplitude Evolution', fontsize=14, fontweight='bold', pad=15)
-ax2.legend(framealpha=0.9, loc='best', ncol=2)
+ax2.set_title('Laser Amplitude Evolution Through Plasma', fontsize=14, fontweight='bold', pad=15)
+ax2.legend(framealpha=0.9, loc='best', ncol=2, fontsize=10)
 ax2.grid(True, alpha=0.3)
 ax2.set_ylim(bottom=0)
 
