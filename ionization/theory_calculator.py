@@ -59,11 +59,17 @@ L_d = (2/3) * (omega_l/omega_p)**2 * np.sqrt(a0) * (c/omega_p)  # m
 # This is the distance over which the laser loses significant energy
 L_pd = (omega_l / omega_p)**2 * a0 * (c / omega_p)  # m
 
-# Laser power (calculated from a0)
-# For Gaussian beam: I₀ = (ε₀ c / 2) × (m_e c ω_l / e)² × a0²
+# Laser intensity from normalized vector potential
+# Using standard LWFA relation: a₀ = 0.85 × λ₀[μm] × √(I₀[10¹⁸ W/cm²])
+# Solving for I₀: I₀[10¹⁸ W/cm²] = (a₀ / (0.85 × λ₀[μm]))²
+lambda0_um = lambda0 * 1e6  # Convert to micrometers
+I_0_normalized = (a0 / (0.85 * lambda0_um))**2  # In units of 10^18 W/cm²
+I_0_cgs = I_0_normalized * 1e18  # Convert to W/cm²
+I_0_SI = I_0_cgs * 1e4  # Convert to W/m²
+
+# Laser power from intensity (for Gaussian beam)
 # P = (π / 2) × I₀ × w0²
-I_0 = (epsilon_0 * c / 2) * (m_e * c * omega_l / e)**2 * a0**2  # W/m²
-P_laser = (pi / 2) * I_0 * w0**2  # W
+P_laser = (pi / 2) * I_0_SI * w0**2  # W
 
 # Rayleigh length
 Z_R = pi * w0**2 / lambda0  # m
@@ -97,6 +103,9 @@ print()
 
 print("LASER PARAMETERS:")
 print("-" * 70)
+print(f"  Peak intensity (I₀):                 {I_0_SI:.4e} W/m²")
+print(f"  Peak intensity (I₀):                 {I_0_cgs:.4e} W/cm²")
+print(f"  Peak intensity (I₀):                 {I_0_normalized:.4f} × 10¹⁸ W/cm²")
 print(f"  Laser power (P):                     {P_laser*1e-12:.4f} TW")
 print(f"  Critical power (Pₖ):                 {P_c*1e-12:.4f} TW")
 print(f"  Power ratio (P/Pₖ):                  {P_laser/P_c:.4f}")
@@ -143,6 +152,7 @@ with open(output_filename, 'w') as f:
     
     f.write("LASER PARAMETERS:\n")
     f.write("-" * 70 + "\n")
+    f.write(f"  Peak intensity (I₀):                 {I_0_normalized:.4f} × 10¹⁸ W/cm²\n")
     f.write(f"  Laser power (P):                     {P_laser*1e-12:.4f} TW\n")
     f.write(f"  Critical power (Pₖ):                 {P_c*1e-12:.4f} TW\n")
     f.write(f"  Power ratio (P/Pₖ):                  {P_laser/P_c:.4f}\n")
