@@ -44,9 +44,9 @@ data_dirs = {
 
 # Display parameters
 gas_labels = {
-    'H': 'Hydrogen (H₂)',
+    'H': 'Hydrogen (H)',
     'He': 'Helium (He)',
-    'N': 'Nitrogen (N₂)'
+    'N': 'Nitrogen (N)'
 }
 
 gas_colors = {
@@ -303,21 +303,21 @@ for idx, gas in enumerate(['H', 'He', 'N']):
     ts = ts_data[gas]
     ax = axes[idx]
     
-    # Use middle iteration
-    iterations = ts.iterations
-    mid_idx = len(iterations) // 2
-    mid_iteration = iterations[mid_idx]
-    print(f"  Using iteration: {mid_iteration}")
+    # Use middle time step
+    times = ts.t
+    mid_idx = len(times) // 2
+    mid_time = times[mid_idx]
+    print(f"  Using time: {mid_time:.6e} s ({mid_time*1e15:.2f} fs)")
     
     # Get charge density (rho)
-    rho, info_rho = ts.get_field(field='rho', iteration=mid_iteration)
+    rho, info_rho = ts.get_field(field='rho', t=mid_time)
     z_rho = info_rho.z
     r_rho = info_rho.r
     
     print(f"  Density field shape: {rho.shape}")
     
     # Get longitudinal electric field Ez (mode 0 - axisymmetric wake)
-    Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=mid_iteration, 
+    Ez, info_Ez = ts.get_field(field='E', coord='z', t=mid_time, 
                                 m=0, slice_across='r')
     z_Ez = info_Ez.z
     
@@ -330,7 +330,7 @@ for idx, gas in enumerate(['H', 'He', 'N']):
     # Convert charge density from C/m³ to electron density cm⁻³
     # rho [C/m³] → n [electrons/cm³] = rho / e / 10^6
     # (divide by elementary charge, then convert m⁻³ to cm⁻³)
-    rho_cm3 = rho / e / 1e6  # electrons/cm³
+    rho_cm3 = rho / 1e6  # electrons/cm³
     
     # Plot charge density as 2D colormap
     # Use symmetric colormap centered at 0
@@ -354,7 +354,7 @@ for idx, gas in enumerate(['H', 'He', 'N']):
     
     # Add colorbar for density
     cbar = plt.colorbar(im, ax=ax, pad=0.15)
-    cbar.set_label(r'Electron Density $n_e$ (cm$^{-3}$)', fontsize=10)
+    cbar.set_label(r'Electron Density $n_e$ (cm$^{-3}$) at time t', fontsize=10)
     
     # Create twin y-axis for Ez
     ax2 = ax.twinx()
@@ -376,7 +376,7 @@ for idx, gas in enumerate(['H', 'He', 'N']):
     ax.set_xlabel('$z$ (µm)', fontsize=11, fontweight='bold')
     if idx == 0:
         ax.set_ylabel('$r$ (µm)', fontsize=11, fontweight='bold')
-    ax.set_title(gas_labels[gas], fontsize=12, fontweight='bold')
+    ax.set_title(f"{gas_labels[gas]} at t = {mid_time*1e15:.2f} fs", fontsize=12, fontweight='bold')
     
     # Formatting for twin axis
     if idx == 2:

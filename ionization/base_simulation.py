@@ -37,7 +37,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # CONFIGURATION: SELECT GAS SPECIES
 # ==========================================
 # Change this to 'H', 'He', or 'N' for each simulation run
-gas_type = 'N'  # <--- MODIFY THIS FOR EACH RUN
+gas_type = 'He'  # <--- MODIFY THIS FOR EACH RUN
 
 # ==========================================
 # FUNDAMENTAL PARAMETERS
@@ -90,23 +90,20 @@ gas_properties = {
     'H': {
         'symbol': 'H',
         'mass_amu': 1.0,      # Atomic mass (amu)
-        'Z': 1,                # Atomic number (electrons per atom)
-        'is_diatomic': True,   # H₂ molecule
-        'description': 'Hydrogen (H₂ molecule)'
+        'Z': 1,               # Atomic number (electrons per atom)
+        'description': 'Hydrogen (H)'
     },
     'He': {
         'symbol': 'He',
         'mass_amu': 4.0,
         'Z': 2,
-        'is_diatomic': False,  # Helium is monoatomic
-        'description': 'Helium (monoatomic)'
+        'description': 'Helium (He)'
     },
     'N': {
         'symbol': 'N',
         'mass_amu': 14.0,
         'Z': 7,
-        'is_diatomic': True,   # N₂ molecule
-        'description': 'Nitrogen (N₂ molecule)'
+        'description': 'Nitrogen (N)'
     }
 }
 
@@ -116,33 +113,21 @@ if gas_type not in gas_properties:
 
 gas = gas_properties[gas_type]
 
-# Calculate molecular/atomic density needed to achieve target n_e
-# For diatomic molecules: 1 molecule = 2 atoms = 2×Z electrons
-# For monoatomic: 1 atom = Z electrons
-if gas['is_diatomic']:
-    electrons_per_molecule = 2 * gas['Z']  # Two atoms per molecule
-    atomic_density = n_e_target / electrons_per_molecule
-    print(f"\n{'='*70}")
-    print(f"Gas: {gas['description']}")
-    print(f"Diatomic molecule: 2 atoms × {gas['Z']} e⁻/atom = {electrons_per_molecule} e⁻/molecule")
-    print(f"Molecular density: {atomic_density:.4e} molecules/m³")
-    print(f"Target electron density: {n_e_target:.4e} e⁻/m³")
-    print(f"{'='*70}\n")
-else:
-    electrons_per_atom = gas['Z']
-    atomic_density = n_e_target / electrons_per_atom
-    print(f"\n{'='*70}")
-    print(f"Gas: {gas['description']}")
-    print(f"Monoatomic: {gas['Z']} e⁻/atom")
-    print(f"Atomic density: {atomic_density:.4e} atoms/m³")
-    print(f"Target electron density: {n_e_target:.4e} e⁻/m³")
-    print(f"{'='*70}\n")
+# Calculate the atomic density required to achieve the target electron density
+# Core principle: n_atom = n_e / Z
+# Each atom of type X provides Z electrons upon full ionization
+atomic_density = n_e_target / gas['Z']
 
-# Particle mass (for diatomic molecules, use molecular mass)
-if gas['is_diatomic']:
-    particle_mass = 2 * gas['mass_amu'] * m_p  # Molecular mass
-else:
-    particle_mass = gas['mass_amu'] * m_p  # Atomic mass
+print(f"\n{'='*70}")
+print(f"Gas: {gas['description']}")
+print(f"Atomic number (electrons per atom): {gas['Z']}")
+print(f"Required atomic density: {atomic_density:.4e} atoms/m³")
+print(f"Target electron density: {n_e_target:.4e} e⁻/m³")
+print(f"  (Verification: {atomic_density:.4e} atoms/m³ × {gas['Z']} e⁻/atom = {atomic_density * gas['Z']:.4e} e⁻/m³)")
+print(f"{'='*70}\n")
+
+# The particle mass is always the atomic mass in our atom-centric model
+particle_mass = gas['mass_amu'] * m_p
 
 # ==========================================
 # CALCULATED PLASMA PARAMETERS
@@ -292,7 +277,7 @@ if __name__ == '__main__':
     
     # Create NEUTRAL atoms/molecules (q=0)
     # All electrons will come from ionization
-    print(f"Adding neutral {gas_type} atoms/molecules...")
+    print(f"Adding neutral {gas_type} atoms...")
     atoms = sim.add_new_species(
         q=0,  # NEUTRAL initially
         m=particle_mass,
@@ -323,8 +308,6 @@ if __name__ == '__main__':
     )
     
     print(f"Ionization configured: {gas['symbol']}⁰ → {gas['symbol']}^{gas['Z']}⁺ + {gas['Z']}e⁻")
-    if gas['is_diatomic']:
-        print(f"  (per molecule: 2 atoms × {gas['Z']} e⁻/atom = {2*gas['Z']} e⁻ total)")
     print()
     
     # ==========================================
