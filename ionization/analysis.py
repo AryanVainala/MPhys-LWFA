@@ -162,8 +162,8 @@ for gas in ['H', 'He', 'N']:
     
     # Filter for accelerated electrons only (exclude bulk plasma)
     # Bulk plasma has gamma ~ 1, accelerated electrons have gamma >> 1
-    # Use threshold of 0 MeV to separate accelerated from bulk
-    E_threshold = 0.0  # MeV
+    # Use threshold of 10 MeV to separate accelerated from bulk
+    E_threshold = 10.0  # MeV
     mask = E_MeV > E_threshold
     
     E_accelerated = E_MeV[mask]
@@ -181,7 +181,7 @@ for gas in ['H', 'He', 'N']:
     # Create weighted histogram
     # Bin edges from 0 to max energy, with fine resolution
     E_max = max(E_MeV.max(), 200)  # At least 200 MeV range
-    bins = np.linspace(0, E_max, 200)
+    bins = np.linspace(0, E_max, 100)
     
     # Weight by particle weight for correct charge representation
     hist, bin_edges = np.histogram(E_accelerated, bins=bins, weights=w_accelerated)

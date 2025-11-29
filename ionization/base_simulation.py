@@ -37,7 +37,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # CONFIGURATION: SELECT GAS SPECIES
 # ==========================================
 # Change this to 'H', 'He', or 'N' for each simulation run
-gas_type = 'He'  # <--- MODIFY THIS FOR EACH RUN
+gas_type = 'H'  # <--- MODIFY THIS FOR EACH RUN
 
 # ==========================================
 # FUNDAMENTAL PARAMETERS
@@ -79,7 +79,8 @@ use_restart = False
 track_electrons = False
 
 # Simulation length
-L_interact = 50.e-6  # Interaction length (m)
+# Note: Must be at least 1-2× dephasing length (L_d) for meaningful acceleration
+L_interact = 50.e-6  # Interaction length (m) - approximately 1× L_d
 
 # ==========================================
 # GAS-SPECIFIC CONFIGURATION
@@ -172,7 +173,7 @@ Nr = int(np.ceil(Lr / dr_target))
 # Number of azimuthal modes
 Nm = 2
 
-print(f"GRID RESOLUTION:")
+print("GRID RESOLUTION:")
 print(f"  Axial: Nz = {Nz} ({Lz/lambda0:.1f} wavelengths, {dz_target*1e6:.4f} µm/cell)")
 print(f"  Radial: Nr = {Nr} ({Lr/skin_depth:.1f} skin depths, {dr_target*1e6:.4f} µm/cell)")
 print(f"  Azimuthal modes: Nm = {Nm}")
@@ -185,11 +186,11 @@ dt = (zmax - zmin) / Nz / c
 T_interact = (L_interact + Lz) / v_window
 N_step = int(T_interact / dt)
 
-print(f"SIMULATION:")
+print("SIMULATION:")
 print(f"  Timestep: {dt*1e15:.4f} fs")
 print(f"  Interaction length: {L_interact*1e6:.1f} µm")
 print(f"  Total steps: {N_step}")
-print()
+print() #These are line breaks 
 
 # ==========================================
 # TRANSVERSE PARABOLIC DENSITY PROFILE
@@ -205,7 +206,7 @@ w_matched = w0
 r_e = e**2 / (4 * pi * epsilon_0 * m_e * c**2)  # Classical electron radius
 rel_delta_n_over_w2 = 1.0 / (pi * r_e * w_matched**4 * n_e_target)
 
-print(f"GUIDING CHANNEL:")
+print("GUIDING CHANNEL:")
 print(f"  Matched spot size: {w_matched*1e6:.2f} µm")
 print(f"  Channel parameter (Δn/n/w²): {rel_delta_n_over_w2*1e12:.4e} m⁻²")
 print()
@@ -291,7 +292,7 @@ if __name__ == '__main__':
     
     # Create EMPTY electron species
     # Will be populated by ionization
-    print(f"Creating empty electron species...")
+    print("Creating empty electron species...")
     electrons = sim.add_new_species(q=-e, m=m_e)
     
     # ==========================================
@@ -314,11 +315,11 @@ if __name__ == '__main__':
     # ADD LASER
     # ==========================================
     
-    print(f"Adding Gaussian laser pulse...")
-    laser_profile = GaussianLaser(a0, w0, tau, z0, zf=z_foc)
-    add_laser_pulse(sim, laser_profile)
-    print(f"  a₀ = {a0}, w₀ = {w0*1e6:.2f} µm, τ = {tau*1e15:.2f} fs")
-    print()
+    # print("Adding Gaussian laser pulse...")
+    # laser_profile = GaussianLaser(a0, w0, tau, z0, zf=z_foc)
+    # add_laser_pulse(sim, laser_profile)
+    # print(f"  a₀ = {a0}, w₀ = {w0*1e6:.2f} µm, τ = {tau*1e15:.2f} fs")
+    # print()
     
     # ==========================================
     # PARTICLE TRACKING (optional)
