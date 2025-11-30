@@ -31,7 +31,7 @@ plt.rcParams.update({
 scan_a0 = [2.0]  # Fixed a0 value
 modes = ['pure_he', 'doped']
 dopant_species = 'N'  # 'N', 'Ne', 'Ar'
-base_dir = './diags_calib'
+base_dir = './diags_doped'
 
 # Physical parameters
 n_e_target = 7.0e24
@@ -42,7 +42,7 @@ E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx for
 # DATA LOADING
 # ==========================================
 
-def load_data(a0, mode):
+def load_data(a0,dopant_species, mode):
     if mode == 'doped':
         path = f"{base_dir}/a{a0}_{mode}_{dopant_species}/hdf5"
     else:
@@ -53,7 +53,7 @@ def load_data(a0, mode):
     return LpaDiagnostics(path)
 
 # ==========================================
-# PLOT 1: PHASE SPACE SEPARATION (z vs pz)
+# PLOTS
 # ==========================================
 
 def plot_phase_space(a0_target):
@@ -93,12 +93,8 @@ def plot_phase_space(a0_target):
     filename = f'{dopant_species}_phase_space.png'
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
-    print(f"✓ Saved: {filename}")
+    print(f"Saved: {filename}")
     plt.close()
-
-# ==========================================
-# PLOT 2: INJECTION THRESHOLD A0 SCAN
-# ==========================================
 
 def plot_charge_scan():
     print(f"\nGenerating Plot : Injected Charge Scan ({dopant_species}-doped)...")
@@ -173,132 +169,100 @@ def plot_charge_scan():
     
     plt.tight_layout()
     plt.savefig(f'{dopant_species}_charge_scan.png', dpi=300)
-    print(f"✓ Saved: {dopant_species}_charge_scan.png")
+    print(f"Saved: {dopant_species}_charge_scan.png")
     plt.close()
     
     return valid_a0, charges_he, charges_doped
 
-# ==========================================
-# PLOT 3: 
-# ==========================================
-
-def plot_wakefield_check(a0_target):
-    print(f"\nGenerating Plot : Wakefield Nonlinearity Check (Pure He)...")
-    
-    ts = load_data(a0_target, 'pure_he')
-    if ts is None:
-        return
-
-    iteration = ts.iterations[-1]
-    
-    # Get Ez field on axis
-    Ez, info = ts.get_field(field='E', coord='z', iteration=iteration, slice_across=['r'])
-    
-    # Construct z axis
-    z = info.z * 1e6 # µm
-    
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(z, Ez, color='blue', label='$E_z$')
-    
-    # Plot Wavebreaking Limit
-    ax.axhline(E_wb, color='k', linestyle='--', label='$E_{WB}$ (Cold)')
-    ax.axhline(-E_wb, color='k', linestyle='--')
-    
-    ax.set_xlabel('z (µm)')
-    ax.set_ylabel('$E_z$ (V/m)')
-    ax.set_title('Wakefield Structure (Pure He)')
-    ax.legend()
-    
-    filename = f'{dopant_species}_wakefield_check.png'
-    plt.tight_layout()
-    plt.savefig(filename, dpi=300)
-    print(f"✓ Saved: {filename}")
-    plt.close()
-
-
-# ==========================================
-# PLOT 4: WAKEFIELD STRUCTURE
-# ==========================================
-
-def plot_wakefield_structure(a0_target):
+def plot_e_density(a0_target):
+    """
+    Plots the plasma density along with the laser profile
+    """
     print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
     
-    modes_to_plot = ['pure_he', 'doped']
-    labels = {'pure_he': 'Pure He', 'doped': f'{dopant_species}-Doped'}
+    mode = 'doped'
+    label = f'{dopant_species}-Doped'
     
-    # Create figure with 2 subplots (one for each mode)
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    # Create figure with 1 subplot
+    fig, ax = plt.subplots(figsize=(8, 5))
     
-    for idx, mode in enumerate(modes_to_plot):
-        ax = axes[idx]
-        ts = load_data(a0_target, mode)
-        
-        if ts is None:
-            ax.text(0.5, 0.5, "Data Not Available", ha='center')
-            continue
+    ts = load_data(a0_target, dopant_species, mode)
+    
+    if ts is None:
+        ax.text(0.5, 0.5, "Data Not Available", ha='center')
+        plt.close()
+        return
 
-        # Use last iteration
-        iteration = ts.iterations[-1]
-        t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
-        
-        # Get charge density (rho)
+    # Use last iteration
+    iteration = ts.iterations[10]
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+    
+    # Get charge density (rho)
+    try:
+        rho_he, info_rho = ts.get_field(field='rho_electrons_he', iteration=iteration)
+        rho_dopant, _ = ts.get_field(field='rho_electrons_dopant', iteration=iteration)
+        rho = rho_he + rho_dopant
+    except:
+        print("Warning: Using total rho (includes ions)")
         rho, info_rho = ts.get_field(field='rho', iteration=iteration)
-        z_rho = info_rho.z
-        r_rho = info_rho.r
-        
-        # Get longitudinal electric field Ez (mode 0 - axisymmetric wake)
-        Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, 
-                                    m=0, slice_across='r')
-        z_Ez = info_Ez.z
-        
-        # Convert Ez to GV/m
-        Ez_GV = Ez / 1e9
-        
-        # Convert charge density to relative
-        # rho is C/m^3. 
-        # to C/cm^3: / 1e6
-        rho_cm3 = rho / 1e6
-        
-        
-        # Plot charge density
-        rho_percentile = 99
-        rho_max = np.percentile(np.abs(rho_cm3), rho_percentile)
-        
-        im = ax.imshow(rho_cm3,
-                       extent=[z_rho.min()*1e6, z_rho.max()*1e6,
-                              r_rho.min()*1e6, r_rho.max()*1e6],
-                       origin='lower',
-                       aspect='auto',
-                       cmap='RdBu_r',
-                       vmin=-rho_max,
-                       vmax=rho_max,
-                       interpolation='bilinear')
-        
-        cbar = plt.colorbar(im, ax=ax, pad=0.15)
-        cbar.set_label(r'$n_e$ (cm$^{-3}$)', fontsize=10)
-        
-        # Twin axis for Ez
-        ax2 = ax.twinx()
-        ax2.plot(z_Ez * 1e6, Ez_GV, color='grey', linewidth=2, alpha=0.8, label='$E_z$')
-        ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.5)
-        
-        ax2.set_ylim(-1000, 1000) 
-        
-        ax.set_xlabel('$z$ (µm)')
-        ax.set_ylabel('$r$ (µm)')
-        ax.set_title(f"{labels[mode]} (t = {t_fs:.1f} fs)")
-        
-        if idx == 1:
-            ax2.set_ylabel('$E_z$ (GV/m)', color='grey')
-        
-        ax2.tick_params(axis='y', labelcolor='grey')
+    
+    z_rho = info_rho.z
+    r_rho = info_rho.r
+
+    # Get longitudinal electric field Ez (mode 0 - axisymmetric wake)
+    Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, 
+                                m=0, slice_across='r')
+    z_Ez = info_Ez.z
+
+    # Get laser envelope
+    laser, laser_info = ts.get_laser_envelope(iteration=iteration, pol='y', imshow=True)
+    
+    # Convert Ez to GV/m
+    Ez_GV = Ez / 1e9
+    
+    # Convert charge density to relative
+    # rho is C/m^3. 
+    # to C/cm^3: / 1e6
+    rho_cm3 = rho / 1e6
+    
+    
+    # Plot charge density
+    rho_percentile = 99
+    rho_max = np.percentile(np.abs(rho_cm3), rho_percentile)
+    
+    im_rho = ax.imshow(rho_cm3,
+                    extent=[z_rho.min()*1e6, z_rho.max()*1e6,
+                            r_rho.min()*1e6, r_rho.max()*1e6],
+                    origin='lower',
+                    aspect='auto',
+                    cmap='RdBu_r',
+                    vmin=-rho_max,
+                    vmax=rho_max)
+    
+    cbar = plt.colorbar(im_rho, ax=ax, pad=0.15)
+    cbar.set_label(r'$n_e$ (cm$^{-3}$)', fontsize=10)
+    
+    # Twin axis for Ez
+    ax2 = ax.twinx()
+    ax2.plot(z_Ez * 1e6, Ez_GV, color='grey', linewidth=2, alpha=0.8, label='$E_z$')
+    ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.5)
+    
+    ax2.set_ylim(-1000, 1000) 
+    
+    ax.set_xlabel('$z$ (µm)')
+    ax.set_ylabel('$r$ (µm)')
+    ax.set_title(f"{label} (t = {t_fs:.1f} fs)")
+    
+    ax2.set_ylabel('$E_z$ (GV/m)', color='grey')
+    
+    ax2.tick_params(axis='y', labelcolor='grey')
         
     fig.suptitle(f'Wakefield Structure ({dopant_species}-doped)', fontsize=14, y=1.02)
     plt.tight_layout()
     
     filename = f'{dopant_species}_wakefield_structure.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"✓ Saved: {filename}")
+    print(f"Saved: {filename}")
     plt.close()
 
 # ==========================================
@@ -310,12 +274,9 @@ if __name__ == "__main__":
     a0_fixed = scan_a0[0]
     
     # Run Charge Scan first to get data
-    a0s, Q_he, Q_doped = plot_charge_scan()
+    # a0s, Q_he, Q_doped = plot_charge_scan()
     
     # Run detailed plots for the fixed a0
-    plot_phase_space(a0_target=a0_fixed)
-    plot_wakefield_check(a0_target=a0_fixed)
-    plot_wakefield_structure(a0_target=a0_fixed)
+    # plot_phase_space(a0_target=a0_fixed)
+    plot_e_density(a0_target=a0_fixed)
     
-    # Run Recommendation
-    recommend_operating_point(a0s, Q_he, Q_doped)

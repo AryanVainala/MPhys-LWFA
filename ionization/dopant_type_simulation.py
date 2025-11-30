@@ -33,12 +33,12 @@ use_cuda = False
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
-n_e_target = 2.e17*1.e6  # electrons/m³
+n_e_target = 2.e18*1.e6  # electrons/m³
 
 # Simulation configuration
 a0 = 2.0  # Laser normalized amplitude
 mode = 'doped'  # 'pure_he' or 'doped'
-dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
+dopant_species = 'N'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
@@ -66,7 +66,7 @@ diag_period = 50
 track_electrons = False
 
 # Simulation length
-L_interact = 700.e-6  # Interaction length (m)
+L_interact = 50.e-6  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -76,9 +76,9 @@ Z_He = 2
 
 # Dopant parameters
 dopant_params = {
-    'N': {'Z': 7, 'm': 14.007 * m_p, 'levels': 7, 'name': 'Nitrogen'},
-    'Ne': {'Z': 10, 'm': 20.180 * m_p, 'levels': 10, 'name': 'Neon'},
-    'Ar': {'Z': 18, 'm': 39.948 * m_p, 'levels': 18, 'name': 'Argon'}
+    'N': {'Z': 7, 'm': 14 * m_p, 'levels': 7, 'name': 'Nitrogen'},
+    'Ne': {'Z': 10, 'm': 20 * m_p, 'levels': 10, 'name': 'Neon'},
+    'Ar': {'Z': 18, 'm': 39 * m_p, 'levels': 18, 'name': 'Argon'}
 }
 
 if dopant_species not in dopant_params:
@@ -113,7 +113,7 @@ n_e_total = n_He * Z_He + n_dopant * Z_dopant
 print(f"  Total potential n_e: {n_e_total:.4e} m^-3 (Target: {n_e_target:.4e})")
 
 # Particle masses
-m_He = 4.0026 * m_p
+m_He = 4. * m_p
 
 # ==========================================
 # CALCULATED PLASMA PARAMETERS
@@ -141,11 +141,11 @@ Lr = rmax
 # INTELLIGENT GRID RESOLUTION
 # ==========================================
 
-# Axial resolution: 15 points per laser wavelength
-dz_target = lambda0 / 15.0
+# Axial resolution: no points per laser wavelength
+dz_target = lambda0 / 10.0
 Nz = int(np.ceil(Lz / dz_target))
 
-# Radial resolution: 5 points per plasma skin depth
+# Radial resolution: no points per plasma skin depth
 dr_target = skin_depth / 5.0
 Nr = int(np.ceil(Lr / dr_target))
 
@@ -268,14 +268,14 @@ if __name__ == '__main__':
     # ==========================================
     
     # Output directory
-    write_dir = f"diags_doped/a{a0}_{mode}_{dopant_species}" if mode == 'doped' else f"diags_calib/a{a0}_{mode}"
+    write_dir = f"diags_doped/a{a0}_{mode}_{dopant_species}" if mode == 'doped' else f"diags_doped/a{a0}_{mode}"
     if not os.path.exists(write_dir):
         os.makedirs(write_dir)
     
     # Field Diagnostics
     sim.diags = [
         FieldDiagnostic(period=diag_period, fldobject=sim.fld, 
-                        comm=sim.comm, fieldtypes=['rho','E', 'B'],
+                        comm=sim.comm,
                         write_dir=write_dir)
     ]
     
@@ -286,8 +286,14 @@ if __name__ == '__main__':
     sim.diags.append(
         ParticleDiagnostic(period=diag_period, species=species_dict,
                            comm=sim.comm, 
-                           particle_data=['position', 'momentum', 'weighting'],
                            write_dir=write_dir)
+    )
+
+    # Particle Charge Density Diagnostic - To get proper electron density
+    sim.diags.append(
+        ParticleChargeDensityDiagnostic(period=diag_period, sim=sim,
+                                        species=species_dict,
+                                        write_dir=write_dir)
     )
     
     # ==========================================
