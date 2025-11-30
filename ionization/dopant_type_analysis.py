@@ -28,8 +28,9 @@ plt.rcParams.update({
 # CONFIGURATION
 # ==========================================
 
-scan_a0 = [1.5, 2.0, 2.5]
+scan_a0 = [2.0]  # Fixed a0 value
 modes = ['pure_he', 'doped']
+dopant_species = 'N'  # 'N', 'Ne', 'Ar'
 base_dir = './diags_calib'
 
 # Physical parameters
@@ -42,9 +43,12 @@ E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx for
 # ==========================================
 
 def load_data(a0, mode):
-    path = f"{base_dir}/a{a0}_{mode}/hdf5"
+    if mode == 'doped':
+        path = f"{base_dir}/a{a0}_{mode}_{dopant_species}/hdf5"
+    else:
+        path = f"{base_dir}/a{a0}_{mode}/hdf5"
     if not os.path.exists(path):
-        print(f"Warning: Data not found for a0={a0}, mode={mode} at {path}")
+        print(f"Warning: Data not found for a0={a0}, mode={mode}, dopant={dopant_species} at {path}")
         return None
     return LpaDiagnostics(path)
 
@@ -53,26 +57,26 @@ def load_data(a0, mode):
 # ==========================================
 
 def plot_phase_space(a0_target):
-    print(f"\nGenerating Plot : Phase Space Separation (a0={a0_target})...")
+    print(f"\nGenerating Plot : Phase Space Separation ({dopant_species}-doped)...")
     
     ts = load_data(a0_target, 'doped')
     if ts is None:
         return
 
-    iteration = ts.iterations[-1]
+    iteration = ts.iterations[-1] # Change interation if needed
     
     # Get data for both species
     z_he, uz_he, w_he = ts.get_particle(['z', 'uz', 'w'], species='electrons_he', iteration=iteration)
-    z_n, uz_n, w_n = ts.get_particle(['z', 'uz', 'w'], species='electrons_n', iteration=iteration)
+    z_dopant, uz_dopant, w_dopant = ts.get_particle(['z', 'uz', 'w'], species='electrons_dopant', iteration=iteration)
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Plot Nitrogen electrons (Injected) - Plot FIRST (Background layer)
-    if len(z_n) > 0:
-        ax.scatter(z_n*1e6, uz_n, 
-                   s=5, color='red', alpha=0.3, label='N Electrons (Injected)', zorder=1)
+    # Plot Dopant electrons (Injected) - Plot FIRST (Background layer)
+    if len(z_dopant) > 0:
+        ax.scatter(z_dopant*1e6, uz_dopant, 
+                   s=5, color='red', alpha=0.3, label=f'{dopant_species} Electrons (Injected)', zorder=1)
     else:
-        ax.text(0.5, 0.5, "No Nitrogen Electrons Injected", 
+        ax.text(0.5, 0.5, f"No {dopant_species} Electrons Injected", 
                 transform=ax.transAxes, ha='center', color='red')
 
     # Plot Helium electrons (Bulk) - Plot SECOND (Foreground layer)
@@ -83,21 +87,21 @@ def plot_phase_space(a0_target):
     
     ax.set_xlabel('z (µm)')
     ax.set_ylabel('$p_z / m_e c$')
-    ax.set_title(f'Phase Space Separation at $a_0 = {a0_target}$')
+    ax.set_title(f'Phase Space Separation ({dopant_species}-doped)')
     ax.legend()
     
-    filename = f'calib_phase_space_a{a0_target}.png'
+    filename = f'{dopant_species}_phase_space.png'
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     print(f"✓ Saved: {filename}")
     plt.close()
 
 # ==========================================
-# PLOT 2: INJECTION THRESHOLD SCAN
+# PLOT 2: INJECTION THRESHOLD A0 SCAN
 # ==========================================
 
 def plot_charge_scan():
-    print("\nGenerating Plot : Injected Charge Scan...")
+    print(f"\nGenerating Plot : Injected Charge Scan ({dopant_species}-doped)...")
     
     # Metric: Total Injected Charge (pC)
     # We define "Injected" as E > 2 MeV to exclude bulk fluid
@@ -142,12 +146,12 @@ def plot_charge_scan():
             # Get current distribution along z
             gamma_threshold = 1 + E_threshold_MeV / 0.511
             uz_threshold = np.sqrt(gamma_threshold**2 - 1)
-            I_n, info_n = ts_doped.get_current(species='electrons_n', iteration=iteration,
+            I_dopant, info_dopant = ts_doped.get_current(species='electrons_dopant', iteration=iteration,
                                                 select={'uz': [uz_threshold, None]})
             # get_current returns current in Amperes
             # To get charge, integrate: Q = ∫ I dt = I * (dz/c) summed over all bins
-            Q_n = np.sum(np.abs(I_n)) * info_n.dz / c * 1e12  # Convert to pC
-            charges_doped.append(Q_n)
+            Q_dopant = np.sum(np.abs(I_dopant)) * info_dopant.dz / c * 1e12  # Convert to pC
+            charges_doped.append(Q_dopant)
                 
         except Exception as err:
             print(f"  Error reading Doped data for a0={a0}: {err}")
@@ -159,27 +163,27 @@ def plot_charge_scan():
 
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(valid_a0, charges_he, 'o--', color='grey', label='Pure He (Noise)')
-    ax.plot(valid_a0, charges_doped, 'o-', color='red', label='N-Doped (Signal)')
+    ax.plot(valid_a0, charges_doped, 'o-', color='red', label=f'{dopant_species}-Doped (Signal)')
     
     ax.set_xlabel('$a_0$')
     ax.set_ylabel(f'Injected Charge (pC) [E > {E_threshold_MeV} MeV]')
-    ax.set_title('Injected Charge Scan')
+    ax.set_title(f'Injected Charge Scan ({dopant_species}-doped)')
     ax.legend()
     ax.grid(True)
     
     plt.tight_layout()
-    plt.savefig('calib_charge_scan.png', dpi=300)
-    print("✓ Saved: calib_charge_scan.png")
+    plt.savefig(f'{dopant_species}_charge_scan.png', dpi=300)
+    print(f"✓ Saved: {dopant_species}_charge_scan.png")
     plt.close()
     
     return valid_a0, charges_he, charges_doped
 
 # ==========================================
-# PLOT 3: WAKEFIELD NONLINEARITY CHECK
+# PLOT 3: 
 # ==========================================
 
 def plot_wakefield_check(a0_target):
-    print(f"\nGenerating Plot : Wakefield Nonlinearity Check (a0={a0_target})...")
+    print(f"\nGenerating Plot : Wakefield Nonlinearity Check (Pure He)...")
     
     ts = load_data(a0_target, 'pure_he')
     if ts is None:
@@ -202,10 +206,10 @@ def plot_wakefield_check(a0_target):
     
     ax.set_xlabel('z (µm)')
     ax.set_ylabel('$E_z$ (V/m)')
-    ax.set_title(f'Wakefield Structure at $a_0 = {a0_target}$')
+    ax.set_title('Wakefield Structure (Pure He)')
     ax.legend()
     
-    filename = f'calib_wakefield_a{a0_target}.png'
+    filename = f'{dopant_species}_wakefield_check.png'
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     print(f"✓ Saved: {filename}")
@@ -217,10 +221,10 @@ def plot_wakefield_check(a0_target):
 # ==========================================
 
 def plot_wakefield_structure(a0_target):
-    print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target})...")
+    print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
     
     modes_to_plot = ['pure_he', 'doped']
-    labels = {'pure_he': 'Pure He', 'doped': 'N-Doped'}
+    labels = {'pure_he': 'Pure He', 'doped': f'{dopant_species}-Doped'}
     
     # Create figure with 2 subplots (one for each mode)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -250,11 +254,11 @@ def plot_wakefield_structure(a0_target):
         # Convert Ez to GV/m
         Ez_GV = Ez / 1e9
         
-        # Convert charge density to electron density cm^-3
-        # rho is C/m^3. Electrons are negative.
-        # n_e = rho / (-e)
-        # to cm^-3: / 1e6
-        rho_cm3 = rho / (-e) / 1e6
+        # Convert charge density to relative
+        # rho is C/m^3. 
+        # to C/cm^3: / 1e6
+        rho_cm3 = rho / 1e6
+        
         
         # Plot charge density
         rho_percentile = 99
@@ -289,89 +293,29 @@ def plot_wakefield_structure(a0_target):
         
         ax2.tick_params(axis='y', labelcolor='grey')
         
-    fig.suptitle(f'Wakefield Structure at $a_0 = {a0_target}$', fontsize=14, y=1.02)
+    fig.suptitle(f'Wakefield Structure ({dopant_species}-doped)', fontsize=14, y=1.02)
     plt.tight_layout()
     
-    filename = f'calib_wakefield_structure_a{a0_target}.png'
+    filename = f'{dopant_species}_wakefield_structure.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"✓ Saved: {filename}")
     plt.close()
-
-# ==========================================
-# RECOMMENDATION LOGIC
-# ==========================================
-
-def recommend_operating_point(a0s, Q_he, Q_doped):
-    print("\n" + "="*60)
-    print("RECOMMENDATION FOR OPTIMAL a0 OPERATING POINT")
-    print("="*60)
-    
-    # Theoretical Reference
-    # Cold Wavebreaking Field: E_wb ~ 96 * sqrt(n0[cm^-3]) V/m
-    n0_cm3 = n_e_target / 1e6
-    E_wb_theory = 96 * np.sqrt(n0_cm3) # V/m
-    print(f"Theoretical Cold Wavebreaking Field: {E_wb_theory/1e9:.1f} GV/m")
-    
-    best_a0 = None
-    best_contrast = -1.0
-    
-    print(f"{'a0':<5} | {'Signal (pC)':<12} | {'Noise (pC)':<12} | {'Contrast':<10} | {'Status'}")
-    print("-" * 60)
-
-    for i, a0 in enumerate(a0s):
-        signal = Q_doped[i]
-        noise = Q_he[i]
-        
-        # Avoid division by zero
-        if noise < 0.001: noise = 0.001
-        
-        contrast = signal / noise
-        
-        # Evaluation Criteria:
-        # 1. Signal: Must have significant charge (> 1.0 pC)
-        # 2. Purity: Contrast must be high (> 5)
-        
-        has_signal = signal > 1.0
-        is_pure = contrast > 5.0
-        
-        status = "REJECT"
-        if has_signal and is_pure:
-            status = "ACCEPT"
-            if contrast > best_contrast:
-                best_contrast = contrast
-                best_a0 = a0
-        elif has_signal and not is_pure:
-            status = "NOISY"
-        elif not has_signal:
-            status = "WEAK"
-            
-        print(f"{a0:<5.1f} | {signal:<12.1f} | {noise:<12.1f} | {contrast:<10.1f} | {status}")
-
-    print("-" * 60)
-    
-    if best_a0:
-        print(f"\nRECOMMENDATION: Use a0 = {best_a0}")
-        print("Reasoning:")
-        print("1. Signal > 1.0 pC confirms significant injection.")
-        print("2. Contrast > 5.0 confirms injection is dominated by the Dopant.")
-    else:
-        print("\nRECOMMENDATION: Inconclusive.")
-        print("No operating point met the strict purity standards.")
-
 
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 
 if __name__ == "__main__":
+    # Use fixed a0
+    a0_fixed = scan_a0[0]
+    
     # Run Charge Scan first to get data
     a0s, Q_he, Q_doped = plot_charge_scan()
     
-    # Run detailed plots for ALL scanned a0 values
-    for a0 in scan_a0:
-        plot_phase_space(a0_target=a0)
-        plot_wakefield_check(a0_target=a0)
-        plot_wakefield_structure(a0_target=a0)
+    # Run detailed plots for the fixed a0
+    plot_phase_space(a0_target=a0_fixed)
+    plot_wakefield_check(a0_target=a0_fixed)
+    plot_wakefield_structure(a0_target=a0_fixed)
     
     # Run Recommendation
     recommend_operating_point(a0s, Q_he, Q_doped)

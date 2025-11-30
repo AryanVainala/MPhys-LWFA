@@ -1,13 +1,12 @@
 """
-Calibration Simulation Script for Ionization Injection Tuning
+Simulation Script for Ionization Injection for different dopant Types
 
-This script performs an a0 scan to calibrate the ionization injection threshold.
-It compares Pure Helium vs. Nitrogen-Doped Helium to isolate the injection signal.
+This script performs simulations for ionisation injection using different dopant types.
+The user defines either Pure Helium or Nitrogen-Doped Helium to isolate the injection signal, dopant type, and concentration.
 
 Usage:
 ------
-python a0_calib_simulation.py --a0 2.0 --mode pure_he
-python a0_calib_simulation.py --a0 2.0 --mode doped --dopant_conc 0.01
+python dopant_type_simulation.py
 """
 
 # -------
@@ -15,8 +14,6 @@ python a0_calib_simulation.py --a0 2.0 --mode doped --dopant_conc 0.01
 # -------
 import numpy as np
 import math
-import argparse
-import sys
 import os
 from scipy.constants import c, e, m_e, m_p, epsilon_0, pi
 from fbpic.main import Simulation
@@ -26,17 +23,9 @@ from fbpic.lpa_utils.laser.laser_profiles import GaussianLaser
 from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
     ParticleChargeDensityDiagnostic
 
-# ==========================================
-# ARGUMENT PARSING
-# ==========================================
-parser = argparse.ArgumentParser(description='Run ionization calibration simulation')
-parser.add_argument('--a0', type=float, default=2.0, help='Laser normalized amplitude')
-parser.add_argument('--mode', type=str, choices=['pure_he', 'doped'], default='pure_he', help='Simulation mode')
-parser.add_argument('--dopant_conc', type=float, default=0.01, help='Dopant concentration (fraction)')
-args = parser.parse_args()
 
 # ==========================================
-# FUNDAMENTAL PARAMETERS
+# CONFIGURATION PARAMETERS
 # ==========================================
 
 # Computational settings
@@ -44,10 +33,16 @@ use_cuda = False
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
-n_e_target = 7.0e24  # electrons/m³
+n_e_target = 2.e17*1.e6  # electrons/m³
+
+# Simulation configuration
+a0 = 2.0  # Laser normalized amplitude
+mode = 'doped'  # 'pure_he' or 'doped'
+dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
+dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
-a0 = args.a0
+a0_param = 2.0
 lambda0 = 0.8e-6  # Laser wavelength (m)
 w0 = 5.e-6        # Laser waist (m)
 tau = 16.e-15     # Laser duration (s)
@@ -71,43 +66,54 @@ diag_period = 50
 track_electrons = False
 
 # Simulation length
-L_interact = 50.e-6  # Interaction length (m)
+L_interact = 700.e-6  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
 # ==========================================
 # Atomic numbers
 Z_He = 2
-Z_N = 7
+
+# Dopant parameters
+dopant_params = {
+    'N': {'Z': 7, 'm': 14.007 * m_p, 'levels': 7, 'name': 'Nitrogen'},
+    'Ne': {'Z': 10, 'm': 20.180 * m_p, 'levels': 10, 'name': 'Neon'},
+    'Ar': {'Z': 18, 'm': 39.948 * m_p, 'levels': 18, 'name': 'Argon'}
+}
+
+if dopant_species not in dopant_params:
+    raise ValueError(f"Unknown dopant species: {dopant_species}")
+
+Z_dopant = dopant_params[dopant_species]['Z']
+m_dopant = dopant_params[dopant_species]['m']
+levels_dopant = dopant_params[dopant_species]['levels']
+name_dopant = dopant_params[dopant_species]['name']
 
 # Calculate densities based on mode
-if args.mode == 'pure_he':
+if mode == 'pure_he':
     # Pure Helium case: n_He * Z_He = n_e_target
     n_He = n_e_target / Z_He
-    n_N = 0.0
+    n_dopant = 0.0
     print(f"Mode: Pure Helium (a0={a0})")
     print(f"  n_He: {n_He:.4e} m^-3")
-    print(f"  n_N : {n_N:.4e} m^-3")
+    print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
     
-elif args.mode == 'doped':
-    # Doped case: n_He * Z_He + n_N * Z_N = n_e_target
-    # n_N = n_He * dopant_conc
-    # n_He * Z_He + n_He * dopant_conc * Z_N = n_e_target
-    # n_He * (Z_He + dopant_conc * Z_N) = n_e_target
+elif mode == 'doped':
+    # Doped case: n_He * Z_He + n_dopant * Z_dopant = n_e_target
+    # n_dopant = n_He * dopant_conc
     
-    n_He = n_e_target / (Z_He + args.dopant_conc * Z_N)
-    n_N = n_He * args.dopant_conc
-    print(f"Mode: Nitrogen-Doped Helium (a0={a0}, conc={args.dopant_conc*100}%)")
+    n_He = n_e_target / (Z_He + dopant_conc * Z_dopant)
+    n_dopant = n_He * dopant_conc
+    print(f"Mode: {name_dopant}-Doped Helium (a0={a0}, conc={dopant_conc*100}%)")
     print(f"  n_He: {n_He:.4e} m^-3")
-    print(f"  n_N : {n_N:.4e} m^-3")
+    print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
 
 # Verify total electron density
-n_e_total = n_He * Z_He + n_N * Z_N
+n_e_total = n_He * Z_He + n_dopant * Z_dopant
 print(f"  Total potential n_e: {n_e_total:.4e} m^-3 (Target: {n_e_target:.4e})")
 
 # Particle masses
-m_He = 4.0 * m_p
-m_N = 14.0 * m_p
+m_He = 4.0026 * m_p
 
 # ==========================================
 # CALCULATED PLASMA PARAMETERS
@@ -215,12 +221,12 @@ if __name__ == '__main__':
         p_zmin=p_zmin
     )
     
-    # 2. Nitrogen Atoms (Neutral) - Only if doped
-    atoms_n = None
-    if n_N > 0:
-        print("Adding neutral Nitrogen atoms...")
-        atoms_n = sim.add_new_species(
-            q=0, m=m_N, n=n_N,
+    # 2. Dopant Atoms (Neutral) - Only if doped
+    atoms_dopant = None
+    if n_dopant > 0:
+        print(f"Adding neutral {name_dopant} atoms...")
+        atoms_dopant = sim.add_new_species(
+            q=0, m=m_dopant, n=n_dopant,
             dens_func=dens_func,
             p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
             p_zmin=p_zmin
@@ -229,7 +235,7 @@ if __name__ == '__main__':
     # 3. Electron Species - SEPARATED
     print("Creating electron species...")
     electrons_he = sim.add_new_species(q=-e, m=m_e)
-    electrons_n = sim.add_new_species(q=-e, m=m_e)
+    electrons_dopant = sim.add_new_species(q=-e, m=m_e)
     
     # ==========================================
     # ACTIVATE FIELD IONIZATION
@@ -239,10 +245,9 @@ if __name__ == '__main__':
     # Levels 0 -> 2 (Full ionization)
     atoms_he.make_ionizable('He', target_species=electrons_he, level_start=0, level_max=2)
     
-    # Ionize Nitrogen -> electrons_n (if present)
-    # Levels 0 -> 7 (Full ionization)
-    if atoms_n:
-        atoms_n.make_ionizable('N', target_species=electrons_n, level_start=0, level_max=7)
+    # Ionize Dopant -> electrons_dopant (if present)
+    if atoms_dopant:
+        atoms_dopant.make_ionizable(dopant_species, target_species=electrons_dopant, level_start=0, level_max=levels_dopant)
     
     # ==========================================
     # LASER PULSE
@@ -263,20 +268,20 @@ if __name__ == '__main__':
     # ==========================================
     
     # Output directory
-    write_dir = f"diags_calib/a{a0}_{args.mode}"
+    write_dir = f"diags_doped/a{a0}_{mode}_{dopant_species}" if mode == 'doped' else f"diags_calib/a{a0}_{mode}"
     if not os.path.exists(write_dir):
         os.makedirs(write_dir)
     
     # Field Diagnostics
     sim.diags = [
         FieldDiagnostic(period=diag_period, fldobject=sim.fld, 
-                        comm=sim.comm, fieldtypes=['rho', 'E', 'B'],
+                        comm=sim.comm, fieldtypes=['rho','E', 'B'],
                         write_dir=write_dir)
     ]
     
     # Particle Diagnostics - Save BOTH electron species
     # We want to distinguish source of electrons
-    species_dict = {'electrons_he': electrons_he, 'electrons_n': electrons_n}
+    species_dict = {'electrons_he': electrons_he, 'electrons_dopant': electrons_dopant}
     
     sim.diags.append(
         ParticleDiagnostic(period=diag_period, species=species_dict,

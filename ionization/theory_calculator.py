@@ -13,7 +13,8 @@ Formulas implemented:
 """
 
 import numpy as np
-from scipy.constants import c, e, m_e, epsilon_0, pi
+from scipy.constants import c, pi
+import lwfa_theory as theory
 
 # =====================================
 # PARAMETERS FROM ionization_script.py
@@ -36,43 +37,27 @@ n_e = 7.0e24       # electrons/m³
 # Laser angular frequency
 omega_l = 2 * pi * c / lambda0  # rad/s
 
-# Plasma angular frequency
-omega_p = np.sqrt(n_e * e**2 / (m_e * epsilon_0))  # rad/s
+# Plasma parameters
+omega_p = theory.get_omega_p(n_e)
+lambda_p = theory.get_lambda_p(n_e)
+k_p = omega_p / c
+c_over_omega_p = theory.get_skin_depth(n_e)
 
-# Plasma wavelength
-lambda_p = 2 * pi * c / omega_p  # m
+# Critical power
+P_c = theory.get_critical_power(lambda0, n_e)
 
-# Plasma wavenumber
-k_p = omega_p / c  # 1/m
+# Characteristic lengths
+L_d = theory.get_dephasing_length(a0, lambda0, n_e)
+L_pd = theory.get_pump_depletion_length(a0, lambda0, n_e)
 
-# Plasma skin depth
-c_over_omega_p = c / omega_p  # m
-
-# Critical power for relativistic self-focusing
-P_c = 17e9 * (omega_l / omega_p)**2  # W
-
-# Dephasing length (blowout regime, a0 > 2)
-# This is the distance over which electrons slip from accelerating to decelerating phase
-L_d = (2/3) * (omega_l/omega_p)**2 * np.sqrt(a0) * (c/omega_p)  # m
-
-# Pump depletion length (blowout regime)
-# This is the distance over which the laser loses significant energy
-L_pd = (omega_l / omega_p)**2 * a0 * (c / omega_p)  # m
-
-# Laser intensity from normalized vector potential
-# Using standard LWFA relation: a₀ = 0.85 × λ₀[μm] × √(I₀[10¹⁸ W/cm²])
-# Solving for I₀: I₀[10¹⁸ W/cm²] = (a₀ / (0.85 × λ₀[μm]))²
-lambda0_um = lambda0 * 1e6  # Convert to micrometers
-I_0_normalized = (a0 / (0.85 * lambda0_um))**2  # In units of 10^18 W/cm²
-I_0_cgs = I_0_normalized * 1e18  # Convert to W/cm²
-I_0_SI = I_0_cgs * 1e4  # Convert to W/m²
-
-# Laser power from intensity (for Gaussian beam)
-# P = (π / 2) × I₀ × w0²
-P_laser = (pi / 2) * I_0_SI * w0**2  # W
+# Laser intensity and power
+I_0_SI = theory.get_intensity_from_a0(a0, lambda0)
+I_0_cgs = I_0_SI * 1e-4
+I_0_normalized = I_0_cgs * 1e-18
+P_laser = theory.get_laser_power(a0, lambda0, w0)
 
 # Rayleigh length
-Z_R = pi * w0**2 / lambda0  # m
+Z_R = theory.get_rayleigh_length(w0, lambda0)
 
 # =====================================
 # OUTPUT RESULTS
