@@ -53,9 +53,9 @@ p_zmin = 0.e-6       # Start of plasma (m)
 ramp_length = 20.e-6  # Length of entrance ramp (m)
 
 # Particle resolution per cell
-p_nz = 4  # Particles per cell along z
-p_nr = 4  # Particles per cell along r
-p_nt = 8  # Particles per cell along theta
+p_nz = 2  # Particles per cell along z
+p_nr = 2  # Particles per cell along r
+p_nt = 6  # Particles per cell along theta
 
 # Moving window
 v_window = c
@@ -83,16 +83,23 @@ dopant_params = {
     'Ar': {'Z': 18, 'm': 39 * m_p, 'levels': 18, 'name': 'Argon'}
 }
 
-if dopant_species not in dopant_params:
-    raise ValueError(f"Unknown dopant species: {dopant_species}")
-
-Z_dopant = dopant_params[dopant_species]['Z']
-m_dopant = dopant_params[dopant_species]['m']
-levels_dopant = dopant_params[dopant_species]['levels']
-name_dopant = dopant_params[dopant_species]['name']
-
 # Define the background charge state (Z that contributes to plasma density)
 bg_charge = {'N': 5, 'Ne': 8, 'Ar': 8}
+
+if mode == 'doped':
+    if dopant_species not in dopant_params:
+        raise ValueError(f"Unknown dopant species: {dopant_species}")
+
+    Z_dopant = dopant_params[dopant_species]['Z']
+    m_dopant = dopant_params[dopant_species]['m']
+    levels_dopant = dopant_params[dopant_species]['levels']
+    name_dopant = dopant_params[dopant_species]['name']
+else:
+    # Dummy values for pure_he mode
+    Z_dopant = 0
+    m_dopant = 0
+    levels_dopant = 0
+    name_dopant = "None"
 
 # Calculate densities based on mode
 if mode == 'pure_he':
@@ -101,7 +108,7 @@ if mode == 'pure_he':
     n_dopant = 0.0
     print(f"Mode: Pure Helium (a0={a0})")
     print(f"  n_He: {n_He:.4e} m^-3")
-    print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
+    print(f"  n_dopant: 0.0000e+00 m^-3")
     
 elif mode == 'doped':
     # Doped case: n_He * Z_He + n_dopant * Z_dopant_bg = n_e_target
@@ -156,11 +163,11 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 20.0
+dz_target = lambda0 / 15.0
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 10.0
+dr_target = skin_depth / 20.0
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes
