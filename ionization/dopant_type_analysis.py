@@ -28,9 +28,9 @@ plt.rcParams.update({
 # CONFIGURATION
 # ==========================================
 
-scan_a0 = [2.0]  # Fixed a0 value
+a0 = 2.0  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_species = 'N'  # 'N', 'Ne', 'Ar'
+dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
@@ -56,10 +56,10 @@ def load_data(a0,dopant_species, mode):
 # PLOTS
 # ==========================================
 
-def plot_phase_space(a0_target):
+def plot_phase_space(a0_target, dopant_species):
     print(f"\nGenerating Plot : Phase Space Separation ({dopant_species}-doped)...")
     
-    ts = load_data(a0_target, 'doped')
+    ts = load_data(a0_target, dopant_species, 'doped')
     if ts is None:
         return
 
@@ -89,92 +89,83 @@ def plot_phase_space(a0_target):
     ax.set_ylabel('$p_z / m_e c$')
     ax.set_title(f'Phase Space Separation ({dopant_species}-doped)')
     ax.legend()
-    
+
     filename = f'{dopant_species}_phase_space.png'
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     print(f"Saved: {filename}")
     plt.close()
 
-def plot_charge_scan():
-    print(f"\nGenerating Plot : Injected Charge Scan ({dopant_species}-doped)...")
+def plot_dopant_comparison():
+    print(f"\nGenerating Plot : Injected Charge Comparison (a0={a0})...")
     
     # Metric: Total Injected Charge (pC)
     # We define "Injected" as E > 2 MeV to exclude bulk fluid
     E_threshold_MeV = 2.0
     
-    charges_he = []
-    charges_doped = [] 
-    valid_a0 = []
+    charges = []
+    species_labels = []
 
-    for a0 in scan_a0:
-        ts_he = load_data(a0, 'pure_he')
-        ts_doped = load_data(a0, 'doped')
-        
-        if ts_he is None or ts_doped is None:
+    # Calculate for each dopant
+    for species in dopant_list:
+        ts = load_data(a0, species, 'doped')
+        if ts is None:
+            charges.append(0.0)
+            species_labels.append(species)
             continue
             
-        valid_a0.append(a0)
-        iteration = ts_he.iterations[-1]
-        
-        # Pure He (Noise)
+        iteration = ts.iterations[-1]
         try:
-            # Get current distribution along z
-            # select particles with energy > threshold
-            # E = (gamma - 1) * m_e * c^2, where gamma = sqrt(1 + uz^2)
-            # For E > E_threshold: uz > sqrt((1 + E_threshold/0.511)^2 - 1)
+            gamma_threshold = 1 + E_threshold_MeV / 0.511
+            uz_threshold = np.sqrt(gamma_threshold**2 - 1)
+            I_dopant, info_dopant = ts.get_current(species='electrons_dopant', iteration=iteration,
+                                                select={'uz': [uz_threshold, None]})
+            Q_dopant = np.sum(np.abs(I_dopant)) * info_dopant.dz / c * 1e12  # pC
+            charges.append(Q_dopant)
+            species_labels.append(species)
+        except Exception as err:
+            print(f"  Error reading {species} data: {err}")
+            charges.append(0.0)
+            species_labels.append(species)
+
+    # Also calculate Pure He noise level
+    ts_he = load_data(a0, None, 'pure_he')
+    Q_he = 0.0
+    if ts_he is not None:
+        try:
+            iteration = ts_he.iterations[-1]
             gamma_threshold = 1 + E_threshold_MeV / 0.511
             uz_threshold = np.sqrt(gamma_threshold**2 - 1)
             I_he, info_he = ts_he.get_current(species='electrons_he', iteration=iteration, 
                                                select={'uz': [uz_threshold, None]})
-            # get_current returns current in Amperes
-            # To get charge, integrate: Q = ∫ I dt = I * (dz/c) summed over all bins
-            # This gives total charge passing through a cross-section
-            Q_he = np.sum(np.abs(I_he)) * info_he.dz / c * 1e12  # Convert to pC
-            charges_he.append(Q_he)
-                
+            Q_he = np.sum(np.abs(I_he)) * info_he.dz / c * 1e12
         except Exception as err:
-            print(f"  Error reading He data for a0={a0}: {err}")
-            charges_he.append(0.0)
-        
-        # Doped (Signal)
-        try:
-            # Get current distribution along z
-            gamma_threshold = 1 + E_threshold_MeV / 0.511
-            uz_threshold = np.sqrt(gamma_threshold**2 - 1)
-            I_dopant, info_dopant = ts_doped.get_current(species='electrons_dopant', iteration=iteration,
-                                                select={'uz': [uz_threshold, None]})
-            # get_current returns current in Amperes
-            # To get charge, integrate: Q = ∫ I dt = I * (dz/c) summed over all bins
-            Q_dopant = np.sum(np.abs(I_dopant)) * info_dopant.dz / c * 1e12  # Convert to pC
-            charges_doped.append(Q_dopant)
-                
-        except Exception as err:
-            print(f"  Error reading Doped data for a0={a0}: {err}")
-            charges_doped.append(0.0)
+            print(f"  Error reading He data: {err}")
 
-    if not valid_a0:
-        print("No valid data found for threshold scan.")
-        return [], [], []
-
+    # Plot Bar Chart
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(valid_a0, charges_he, 'o--', color='grey', label='Pure He (Noise)')
-    ax.plot(valid_a0, charges_doped, 'o-', color='red', label=f'{dopant_species}-Doped (Signal)')
+    bars = ax.bar(species_labels, charges, color=['red', 'green', 'blue'], alpha=0.7, label='Doped (Signal)')
     
-    ax.set_xlabel('$a_0$')
+    # Add He noise line
+    ax.axhline(y=Q_he, color='grey', linestyle='--', label='Pure He (Noise)')
+    
     ax.set_ylabel(f'Injected Charge (pC) [E > {E_threshold_MeV} MeV]')
-    ax.set_title(f'Injected Charge Scan ({dopant_species}-doped)')
+    ax.set_title(f'Injected Charge Comparison (a0={a0})')
     ax.legend()
-    ax.grid(True)
     
-    plt.tight_layout()
-    plt.savefig(f'{dopant_species}_charge_scan.png', dpi=300)
-    print(f"Saved: {dopant_species}_charge_scan.png")
-    plt.close()
-    
-    return valid_a0, charges_he, charges_doped
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}',
+                ha='center', va='bottom')
 
-def plot_e_density(a0_target):
+    plt.tight_layout()
+    plt.savefig('dopant_charge_comparison.png', dpi=300)
+    print("Saved: dopant_charge_comparison.png")
+    plt.close()
+
+def plot_e_density(a0_target, dopant_species):
     """
     Plots the plasma density along with the laser profile
     """
@@ -198,13 +189,7 @@ def plot_e_density(a0_target):
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
     # Get charge density (rho)
-    try:
-        rho_he, info_rho = ts.get_field(field='rho_electrons_he', iteration=iteration)
-        rho_dopant, _ = ts.get_field(field='rho_electrons_dopant', iteration=iteration)
-        rho = rho_he + rho_dopant
-    except:
-        print("Warning: Using total rho (includes ions)")
-        rho, info_rho = ts.get_field(field='rho', iteration=iteration)
+    rho, info_rho = ts.get_field(field='rho', iteration=iteration)
     
     z_rho = info_rho.z
     r_rho = info_rho.r
@@ -223,7 +208,7 @@ def plot_e_density(a0_target):
     # Convert charge density to relative
     # rho is C/m^3. 
     # to C/cm^3: / 1e6
-    rho_cm3 = rho / 1e6
+    rho_cm3 = -rho / n_e_target / e
     
     
     # Plot charge density
@@ -235,12 +220,12 @@ def plot_e_density(a0_target):
                             r_rho.min()*1e6, r_rho.max()*1e6],
                     origin='lower',
                     aspect='auto',
-                    cmap='RdBu_r',
-                    vmin=-rho_max,
-                    vmax=rho_max)
+                    cmap='Greens',
+                    vmin=0,
+                    vmax=1)
     
     cbar = plt.colorbar(im_rho, ax=ax, pad=0.15)
-    cbar.set_label(r'$n_e$ (cm$^{-3}$)', fontsize=10)
+    cbar.set_label(r'$n_e/n_0$ (cm$^{-3}$)', fontsize=10)
     
     # Twin axis for Ez
     ax2 = ax.twinx()
@@ -270,13 +255,15 @@ def plot_e_density(a0_target):
 # ==========================================
 
 if __name__ == "__main__":
-    # Use fixed a0
-    a0_fixed = scan_a0[0]
+
+    # Run Charge Comparison
+    # plot_dopant_comparison()
     
-    # Run Charge Scan first to get data
-    # a0s, Q_he, Q_doped = plot_charge_scan()
-    
-    # Run detailed plots for the fixed a0
-    # plot_phase_space(a0_target=a0_fixed)
-    plot_e_density(a0_target=a0_fixed)
+    plot_phase_space(a0, dopant_species=dopant_list[2])
+
+    # Run detailed plots for each dopant at fixed a0
+    for species in dopant_list:
+        # plot_phase_space(a0_target=a0, dopant_species=species)
+        # plot_e_density(a0_target=a0, dopant_species=species)
+        pass
     

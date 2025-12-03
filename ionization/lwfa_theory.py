@@ -67,3 +67,6 @@ def get_guiding_channel_params(n_e, w0):
     r_e = e**2 / (4 * pi * epsilon_0 * m_e * c**2)
     rel_delta_n_over_w2 = 1.0 / (pi * r_e * w0**4 * n_e)
     return rel_delta_n_over_w2
+
+def get_laser_pulse_length(tau):
+    return c*tau

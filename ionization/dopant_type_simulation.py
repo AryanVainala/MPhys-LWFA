@@ -21,7 +21,7 @@ from fbpic.utils.random_seed import set_random_seed
 from fbpic.lpa_utils.laser import add_laser_pulse
 from fbpic.lpa_utils.laser.laser_profiles import GaussianLaser
 from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
-    ParticleChargeDensityDiagnostic
+    ParticleChargeDensityDiagnostic, set_periodic_checkpoint, restart_from_checkpoint
 
 
 # ==========================================
@@ -33,16 +33,15 @@ use_cuda = False
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
-n_e_target = 2.e18*1.e6  # electrons/m³
+n_e_target = 3.5e18*1.e6  # electrons/m³
 
 # Simulation configuration
-a0 = 2.0  # Laser normalized amplitude
 mode = 'doped'  # 'pure_he' or 'doped'
 dopant_species = 'N'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
-a0_param = 2.0
+a0 = 2.5  # Laser normalized amplitude
 lambda0 = 0.8e-6  # Laser wavelength (m)
 w0 = 5.e-6        # Laser waist (m)
 tau = 16.e-15     # Laser duration (s)
@@ -54,19 +53,22 @@ p_zmin = 0.e-6       # Start of plasma (m)
 ramp_length = 20.e-6  # Length of entrance ramp (m)
 
 # Particle resolution per cell
-p_nz = 2  # Particles per cell along z
-p_nr = 2  # Particles per cell along r
-p_nt = 4  # Particles per cell along theta
+p_nz = 4  # Particles per cell along z
+p_nr = 4  # Particles per cell along r
+p_nt = 8  # Particles per cell along theta
 
 # Moving window
 v_window = c
 
 # Diagnostics
 diag_period = 50
-track_electrons = False
+save_checkpoints = True
+checkpoint_period = 500
+use_restart = False
+track_electrons = True
 
 # Simulation length
-L_interact = 50.e-6  # Interaction length (m)
+L_interact = 1500.e-6  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -89,6 +91,9 @@ m_dopant = dopant_params[dopant_species]['m']
 levels_dopant = dopant_params[dopant_species]['levels']
 name_dopant = dopant_params[dopant_species]['name']
 
+# Define the background charge state (Z that contributes to plasma density)
+bg_charge = {'N': 5, 'Ne': 8, 'Ar': 8}
+
 # Calculate densities based on mode
 if mode == 'pure_he':
     # Pure Helium case: n_He * Z_He = n_e_target
@@ -99,18 +104,27 @@ if mode == 'pure_he':
     print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
     
 elif mode == 'doped':
-    # Doped case: n_He * Z_He + n_dopant * Z_dopant = n_e_target
-    # n_dopant = n_He * dopant_conc
+    # Doped case: n_He * Z_He + n_dopant * Z_dopant_bg = n_e_target
+    # where n_dopant = n_gas_total * dopant_conc
+    # and n_He = n_gas_total * (1 - dopant_conc)
     
-    n_He = n_e_target / (Z_He + dopant_conc * Z_dopant)
-    n_dopant = n_He * dopant_conc
+    Z_dopant_bg = bg_charge[dopant_species]
+    effective_Z = (1.0 - dopant_conc) * Z_He + (dopant_conc * Z_dopant_bg)
+    n_gas_total = n_e_target / effective_Z
+    
+    n_He = n_gas_total * (1.0 - dopant_conc)
+    n_dopant = n_gas_total * dopant_conc
+    
     print(f"Mode: {name_dopant}-Doped Helium (a0={a0}, conc={dopant_conc*100}%)")
     print(f"  n_He: {n_He:.4e} m^-3")
     print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
 
 # Verify total electron density
-n_e_total = n_He * Z_He + n_dopant * Z_dopant
-print(f"  Total potential n_e: {n_e_total:.4e} m^-3 (Target: {n_e_target:.4e})")
+if mode == 'doped':
+    n_e_total = n_He * Z_He + n_dopant * bg_charge[dopant_species]
+else:
+    n_e_total = n_He * Z_He
+print(f"  Total background n_e: {n_e_total:.4e} m^-3 (Target: {n_e_target:.4e})")
 
 # Particle masses
 m_He = 4. * m_p
@@ -138,15 +152,15 @@ Lz = zmax - zmin
 Lr = rmax
 
 # ==========================================
-# INTELLIGENT GRID RESOLUTION
+# GRID RESOLUTION
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 10.0
+dz_target = lambda0 / 20.0
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 5.0
+dr_target = skin_depth / 10.0
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes
@@ -198,7 +212,7 @@ def dens_func(z, r):
 
 if __name__ == '__main__':
     
-    # Set random seed for reproducibility
+    # Set random seed for reproducibility``
     set_random_seed(0)
     
     # Initialize simulation
@@ -212,42 +226,55 @@ if __name__ == '__main__':
     # ADD PARTICLES
     # ==========================================
     
-    # 1. Helium Atoms (Neutral)
-    print("Adding neutral Helium atoms...")
+    # 1. Helium Ions (Pre-ionized He2+)
+    # We assume He is fully ionized by the laser foot, so we start with He2+ ions
+    print("Adding Helium ions (He2+)...")
     atoms_he = sim.add_new_species(
-        q=0, m=m_He, n=n_He,
+        q=2*e, m=m_He, n=n_He,
         dens_func=dens_func,
         p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
         p_zmin=p_zmin
     )
     
-    # 2. Dopant Atoms (Neutral) - Only if doped
+    # 2. Dopant Ions (Pre-ionized to background level)
     atoms_dopant = None
     if n_dopant > 0:
-        print(f"Adding neutral {name_dopant} atoms...")
+        q_dopant = bg_charge[dopant_species] * e
+        print(f"Adding {name_dopant} ions (Charge {bg_charge[dopant_species]}+)...")
         atoms_dopant = sim.add_new_species(
-            q=0, m=m_dopant, n=n_dopant,
+            q=q_dopant, m=m_dopant, n=n_dopant,
             dens_func=dens_func,
             p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
             p_zmin=p_zmin
         )
     
-    # 3. Electron Species - SEPARATED
-    print("Creating electron species...")
-    electrons_he = sim.add_new_species(q=-e, m=m_e)
-    electrons_dopant = sim.add_new_species(q=-e, m=m_e)
+    # 3. Electron Species
+    # Bulk electrons: Neutralize the pre-ionized ions (He2+ and Dopant^Z+)
+    # These form the wakefield.
+    print(f"Adding bulk electrons (n_e = {n_e_total:.2e})...")
+    electrons_bulk = sim.add_new_species(
+        q=-e, m=m_e, n=n_e_total,
+        dens_func=dens_func,
+        p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
+        p_zmin=p_zmin
+    )
+    
+    # Injected electrons: Initially empty.
+    # These will be born from further ionization of the dopant.
+    electrons_injected = sim.add_new_species(q=-e, m=m_e)
     
     # ==========================================
     # ACTIVATE FIELD IONIZATION
     # ==========================================
     
-    # Ionize Helium -> electrons_he
-    # Levels 0 -> 2 (Full ionization)
-    atoms_he.make_ionizable('He', target_species=electrons_he, level_start=0, level_max=2)
+    # Helium is fully ionized (He2+), so no further ionization source.
     
-    # Ionize Dopant -> electrons_dopant (if present)
+    # Dopant ionizes further -> electrons_injected
     if atoms_dopant:
-        atoms_dopant.make_ionizable(dopant_species, target_species=electrons_dopant, level_start=0, level_max=levels_dopant)
+        # Start ionization from the background level
+        level_start = bg_charge[dopant_species]
+        print(f"Activating ionization for {dopant_species} from level {level_start}...")
+        atoms_dopant.make_ionizable(dopant_species, target_species=electrons_injected, level_start=level_start)
     
     # ==========================================
     # LASER PULSE
@@ -258,10 +285,25 @@ if __name__ == '__main__':
     add_laser_pulse(sim, laser_profile)
     
     # ==========================================
-    # MOVING WINDOW
+    # MOVING WINDOW & CHECKPOINTS
     # ==========================================
     
+    if use_restart is False:
+        # Track injected electrons if required
+        if track_electrons:
+            print("Tracking injected electrons enabled.")
+            electrons_injected.track(sim.comm)
+    else:
+        # Load the fields and particles from the latest checkpoint file
+        print("Restarting from checkpoint...")
+        restart_from_checkpoint(sim)
+
     sim.set_moving_window(v=v_window)
+    
+    # Add checkpoints
+    if save_checkpoints:
+        print(f"Checkpoints enabled (every {checkpoint_period} steps).")
+        set_periodic_checkpoint(sim, checkpoint_period)
     
     # ==========================================
     # DIAGNOSTICS
@@ -279,9 +321,10 @@ if __name__ == '__main__':
                         write_dir=write_dir)
     ]
     
-    # Particle Diagnostics - Save BOTH electron species
-    # We want to distinguish source of electrons
-    species_dict = {'electrons_he': electrons_he, 'electrons_dopant': electrons_dopant}
+    # Particle Diagnostics
+    # electrons_bulk: The wakefield driver
+    # electrons_injected: The accelerated bunch
+    species_dict = {'electrons_bulk': electrons_bulk, 'electrons_injected': electrons_injected}
     
     sim.diags.append(
         ParticleDiagnostic(period=diag_period, species=species_dict,
@@ -301,5 +344,5 @@ if __name__ == '__main__':
     # ==========================================
     
     print(f"Running simulation for {N_step} steps...")
-    sim.step(N_step)
+    sim.step( N_step )
     print("Simulation complete.")

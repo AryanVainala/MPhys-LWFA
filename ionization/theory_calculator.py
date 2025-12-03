@@ -21,14 +21,14 @@ import lwfa_theory as theory
 # =====================================
 
 # Laser parameters
-a0 = 4.0           # Normalized laser amplitude
+a0 = 2.5          # Normalized laser amplitude
 lambda0 = 0.8e-6   # Laser wavelength (m)
 w0 = 5.e-6         # Laser waist (m)
 tau = 16.e-15      # Laser duration (s)
 
 # Target electron density (after full ionization)
 # This is the controlled variable across all three gas simulations
-n_e = 7.0e24       # electrons/m³
+n_e = 3.5e24       # electrons/m³
 
 # =====================================
 # THEORETICAL CALCULATIONS
@@ -59,6 +59,9 @@ P_laser = theory.get_laser_power(a0, lambda0, w0)
 # Rayleigh length
 Z_R = theory.get_rayleigh_length(w0, lambda0)
 
+# Laser pulse length
+L = theory.get_laser_pulse_length(tau)
+
 # =====================================
 # OUTPUT RESULTS
 # =====================================
@@ -75,7 +78,7 @@ print(f"  Laser wavelength (λ₀):               {lambda0*1e6:.2f} µm")
 print(f"  Laser waist (w₀):                    {w0*1e6:.2f} µm")
 print(f"  Laser duration (τ):                  {tau*1e15:.2f} fs")
 print(f"  Target electron density (nₑ):        {n_e:.2e} m⁻³")
-print()
+
 
 print("PLASMA PARAMETERS:")
 print("-" * 70)
@@ -84,13 +87,11 @@ print(f"  Plasma wavelength (λₚ):              {lambda_p*1e6:.4f} µm")
 print(f"  Plasma wavenumber (kₚ):              {k_p:.4e} m⁻¹")
 print(f"  Plasma skin depth (c/ωₚ):            {c_over_omega_p*1e6:.4f} µm")
 print(f"  Frequency ratio (ωₗ/ωₚ):             {omega_l/omega_p:.4f}")
-print()
 
 print("LASER PARAMETERS:")
 print("-" * 70)
 print(f"  Peak intensity (I₀):                 {I_0_SI:.4e} W/m²")
-print(f"  Peak intensity (I₀):                 {I_0_cgs:.4e} W/cm²")
-print(f"  Peak intensity (I₀):                 {I_0_normalized:.4f} × 10¹⁸ W/cm²")
+print(f"  Laser pulse length (L):              {L*1e6:.2f} µm")
 print(f"  Laser power (P):                     {P_laser*1e-12:.4f} TW")
 print(f"  Critical power (Pₖ):                 {P_c*1e-12:.4f} TW")
 print(f"  Power ratio (P/Pₖ):                  {P_laser/P_c:.4f}")
