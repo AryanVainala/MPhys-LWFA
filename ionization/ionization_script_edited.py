@@ -37,7 +37,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, \
 # ----------
 
 # Whether to use the GPU
-use_cuda = True
+use_cuda = False
 
 # Order of the stencil for z derivatives in the Maxwell solver.
 # Use -1 for infinite order, i.e. for exact dispersion relation in

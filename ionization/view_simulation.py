@@ -54,7 +54,8 @@ def update_plot(iteration):
         extent=[z.min(), z.max(), r.min(), r.max()],
         origin='lower',
         aspect='auto',
-        cmap='viridis'
+        cmap='Greens',
+        vax = 0
     )
     
     if not hasattr(fig, 'cbar'):

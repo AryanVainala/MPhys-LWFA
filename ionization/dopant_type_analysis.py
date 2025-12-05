@@ -28,9 +28,9 @@ plt.rcParams.update({
 # CONFIGURATION
 # ==========================================
 
-a0 = 2.0  # Fixed a0 value
+a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
+dopant_list = ['N', 'Ne']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
@@ -66,24 +66,40 @@ def plot_phase_space(a0_target, dopant_species):
     iteration = ts.iterations[-1] # Change interation if needed
     
     # Get data for both species
-    z_he, uz_he, w_he = ts.get_particle(['z', 'uz', 'w'], species='electrons_he', iteration=iteration)
-    z_dopant, uz_dopant, w_dopant = ts.get_particle(['z', 'uz', 'w'], species='electrons_dopant', iteration=iteration)
+    # electrons from helium and preionised dopant -> 'electrons_bulk'
+    # outer shell electrons from  -> 'electrons_injected'
     
+    try:
+        z_bulk, uz_bulk, w_bulk = ts.get_particle(['z', 'uz', 'w'], species='electrons_bulk', iteration=iteration)
+    except:
+        print("Warning: 'electrons_bulk' not found, trying 'electrons_he' (legacy)")
+        z_bulk, uz_bulk, w_bulk = ts.get_particle(['z', 'uz', 'w'], species='electrons_he', iteration=iteration)
+
+    try:
+        z_injected, uz_injected, w_injected = ts.get_particle(['z', 'uz', 'w'], species='electrons_injected', iteration=iteration)
+    except:
+        # Fallback or empty if no injection
+        print("Warning: 'electrons_injected' not found, trying 'electrons_dopant' (legacy)")
+        try:
+            z_injected, uz_injected, w_injected = ts.get_particle(['z', 'uz', 'w'], species='electrons_dopant', iteration=iteration)
+        except:
+             z_injected, uz_injected, w_injected = np.array([]), np.array([]), np.array([])
+
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # Plot Dopant electrons (Injected) - Plot FIRST (Background layer)
-    if len(z_dopant) > 0:
-        ax.scatter(z_dopant*1e6, uz_dopant, 
-                   s=5, color='red', alpha=0.3, label=f'{dopant_species} Electrons (Injected)', zorder=1)
+    if len(z_injected) > 0:
+        ax.scatter(z_injected*1e6, uz_injected, 
+                   s=5, color='red', alpha=0.3, label=f'{dopant_species} Electrons (Injected)', zorder=2)
     else:
         ax.text(0.5, 0.5, f"No {dopant_species} Electrons Injected", 
                 transform=ax.transAxes, ha='center', color='red')
 
     # Plot Helium electrons (Bulk) - Plot SECOND (Foreground layer)
-    if len(z_he) > 0:
-        indices_he = np.random.choice(len(z_he), size=min(10000, len(z_he)), replace=False)
-        ax.scatter(z_he[indices_he]*1e6, uz_he[indices_he], 
-                   s=5, color='blue', alpha=0.5, label='He Electrons (Bulk)', zorder=2)
+    if len(z_bulk) > 0:
+        indices_bulk = np.random.choice(len(z_bulk), size=min(10000, len(z_bulk)), replace=False)
+        ax.scatter(z_bulk[indices_bulk]*1e6, uz_bulk[indices_bulk], 
+                   s=5, color='blue', alpha=0.5, label='Bulk Electrons', zorder=1)
     
     ax.set_xlabel('z (µm)')
     ax.set_ylabel('$p_z / m_e c$')
@@ -118,8 +134,15 @@ def plot_dopant_comparison():
         try:
             gamma_threshold = 1 + E_threshold_MeV / 0.511
             uz_threshold = np.sqrt(gamma_threshold**2 - 1)
-            I_dopant, info_dopant = ts.get_current(species='electrons_dopant', iteration=iteration,
-                                                select={'uz': [uz_threshold, None]})
+            
+            # Try new species name first, then legacy
+            try:
+                I_dopant, info_dopant = ts.get_current(species='electrons_injected', iteration=iteration,
+                                                    select={'uz': [uz_threshold, None]})
+            except:
+                I_dopant, info_dopant = ts.get_current(species='electrons_dopant', iteration=iteration,
+                                                    select={'uz': [uz_threshold, None]})
+                                                    
             Q_dopant = np.sum(np.abs(I_dopant)) * info_dopant.dz / c * 1e12  # pC
             charges.append(Q_dopant)
             species_labels.append(species)
@@ -136,8 +159,15 @@ def plot_dopant_comparison():
             iteration = ts_he.iterations[-1]
             gamma_threshold = 1 + E_threshold_MeV / 0.511
             uz_threshold = np.sqrt(gamma_threshold**2 - 1)
-            I_he, info_he = ts_he.get_current(species='electrons_he', iteration=iteration, 
+            
+            # Try new species name first, then legacy
+            try:
+                I_he, info_he = ts_he.get_current(species='electrons_bulk', iteration=iteration, 
                                                select={'uz': [uz_threshold, None]})
+            except:
+                I_he, info_he = ts_he.get_current(species='electrons_he', iteration=iteration, 
+                                               select={'uz': [uz_threshold, None]})
+                                               
             Q_he = np.sum(np.abs(I_he)) * info_he.dz / c * 1e12
         except Exception as err:
             print(f"  Error reading He data: {err}")
@@ -165,27 +195,62 @@ def plot_dopant_comparison():
     print("Saved: dopant_charge_comparison.png")
     plt.close()
 
+def plot_laser_envelope():
+    print("\nGenerating Plot : Laser Envelope...")
+
+    ts = load_data(2.5, 'N', 'doped')
+    if ts is None:
+        return
+
+    # Use the last available iteration
+    iteration = ts.iterations[20]
+
+    # Get laser envelope
+    # pol='y' assumes polarization in y direction
+    envelope, info = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
+    
+    # Plot
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    im = ax.imshow(envelope, origin='lower', aspect='auto', cmap='inferno')
+    
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('Electric Field Envelope (V/m)')
+    
+    ax.set_xlabel('$z$ (µm)')
+    ax.set_ylabel('$r$ (µm)')
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+    ax.set_title(f'Laser Envelope (t = {t_fs:.1f} fs)')
+    
+    plt.tight_layout()
+    filename = 'laser_envelope.png'
+    plt.savefig(filename, dpi=300)
+    print(f"Saved: {filename}")
+    plt.close()
+
+
 def plot_e_density(a0_target, dopant_species):
     """
     Plots the plasma density along with the laser profile
     """
     print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
-    
+
     mode = 'doped'
     label = f'{dopant_species}-Doped'
-    
+
     # Create figure with 1 subplot
     fig, ax = plt.subplots(figsize=(8, 5))
-    
+
     ts = load_data(a0_target, dopant_species, mode)
-    
+
     if ts is None:
         ax.text(0.5, 0.5, "Data Not Available", ha='center')
         plt.close()
         return
 
-    # Use last iteration
-    iteration = ts.iterations[10]
+    # Use last iteration or change it
+    iteration_idx = 20
+    iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
     # Get charge density (rho)
@@ -194,13 +259,13 @@ def plot_e_density(a0_target, dopant_species):
     z_rho = info_rho.z
     r_rho = info_rho.r
 
+    # Get laser envelope
+    laser, laser_info = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
+
     # Get longitudinal electric field Ez (mode 0 - axisymmetric wake)
     Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, 
                                 m=0, slice_across='r')
     z_Ez = info_Ez.z
-
-    # Get laser envelope
-    laser, laser_info = ts.get_laser_envelope(iteration=iteration, pol='y', imshow=True)
     
     # Convert Ez to GV/m
     Ez_GV = Ez / 1e9
@@ -212,7 +277,7 @@ def plot_e_density(a0_target, dopant_species):
     
     
     # Plot charge density
-    rho_percentile = 99
+    rho_percentile = 100
     rho_max = np.percentile(np.abs(rho_cm3), rho_percentile)
     
     im_rho = ax.imshow(rho_cm3,
@@ -223,6 +288,11 @@ def plot_e_density(a0_target, dopant_species):
                     cmap='Greens',
                     vmin=0,
                     vmax=1)
+    
+    im_laser = ax.imshow(laser,
+                    origin='lower',
+                    aspect='auto',
+                    cmap='inferno')
     
     cbar = plt.colorbar(im_rho, ax=ax, pad=0.15)
     cbar.set_label(r'$n_e/n_0$ (cm$^{-3}$)', fontsize=10)
@@ -250,6 +320,30 @@ def plot_e_density(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
+def plot_dopant_emittance(a0_target, dopant_species):
+    print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
+    
+    mode = 'doped'
+    label = f'{dopant_species}-Doped-Helium'
+    
+    # Create figure with 1 subplot
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    ts = load_data(a0_target, dopant_species, mode)
+    
+    if ts is None:
+        ax.text(0.5, 0.5, "Data Not Available", ha='center')
+        plt.close()
+        return
+    
+    iteration = ts.iterations[len(ts.iterations)//2]
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+    
+    # Get charge density (rho)
+    emt_proj, emt_slice = ts.get_emittance(iteration=iteration, species="electrons_injected", select=[])
+    
+    return None
+
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
@@ -259,11 +353,15 @@ if __name__ == "__main__":
     # Run Charge Comparison
     # plot_dopant_comparison()
     
-    plot_phase_space(a0, dopant_species=dopant_list[2])
+    # plot_phase_space(a0, dopant_species=dopant_list[0])
+    # plot_dopant_comparison()
+    plot_e_density(a0, 'N')
+    # plot_laser_envelope()
+
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-        # plot_phase_space(a0_target=a0, dopant_species=species)
-        # plot_e_density(a0_target=a0, dopant_species=species)
+    #     plot_phase_space(a0_target=a0, dopant_species=species)
+    #     plot_e_density(a0_target=a0, dopant_species=species)
         pass
     

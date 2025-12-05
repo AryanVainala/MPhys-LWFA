@@ -29,7 +29,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # ==========================================
 
 # Computational settings
-use_cuda = False
+use_cuda = True
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
@@ -37,7 +37,7 @@ n_e_target = 3.5e18*1.e6  # electrons/m³
 
 # Simulation configuration
 mode = 'doped'  # 'pure_he' or 'doped'
-dopant_species = 'N'  # 'N', 'Ne', 'Ar'
+dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
@@ -55,17 +55,17 @@ ramp_length = 20.e-6  # Length of entrance ramp (m)
 # Particle resolution per cell
 p_nz = 2  # Particles per cell along z
 p_nr = 2  # Particles per cell along r
-p_nt = 6  # Particles per cell along theta
+p_nt = 4  # Particles per cell along theta
 
 # Moving window
 v_window = c
 
 # Diagnostics
 diag_period = 50
-save_checkpoints = True
+save_checkpoints = False
 checkpoint_period = 500
 use_restart = False
-track_electrons = True
+track_electrons = False # I TURNED IT OFF
 
 # Simulation length
 L_interact = 1500.e-6  # Interaction length (m)
@@ -163,7 +163,7 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 15.0
+dz_target = lambda0 / 20.0
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
