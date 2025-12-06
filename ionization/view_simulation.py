@@ -12,7 +12,7 @@ from matplotlib.widgets import Slider
 import numpy as np
 from scipy.constants import c, e, m_e, epsilon_0
 
-ts = OpenPMDTimeSeries('./diags_doped/a2.5_doped_Ne/hdf5')
+ts = OpenPMDTimeSeries('./diags_doped/a2.5_doped_N/hdf5')
 
 # Simulation parameters (from lwfa_script.py)
 lambda0 = 0.8e-6      # Laser wavelength
@@ -55,7 +55,7 @@ def update_plot(iteration):
         origin='lower',
         aspect='auto',
         cmap='Greens',
-        vax = 0
+        vmax = 0
     )
     
     if not hasattr(fig, 'cbar'):

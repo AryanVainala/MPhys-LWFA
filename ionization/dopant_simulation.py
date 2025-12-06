@@ -37,7 +37,7 @@ n_e_target = 3.5e18*1.e6  # electrons/m³
 
 # Simulation configuration
 mode = 'doped'  # 'pure_he' or 'doped'
-dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
+dopant_species = 'N'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
@@ -163,11 +163,11 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 20.0
+dz_target = lambda0 / 10.0
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 20.0
+dr_target = skin_depth / 10.0
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes

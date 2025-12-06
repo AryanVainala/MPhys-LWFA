@@ -24,6 +24,11 @@ def get_omega_l(lambda0):
     """Calculate laser angular frequency (rad/s)."""
     return 2 * pi * c / lambda0
 
+def get_critical_e_density(lambda0):
+    """Calculate the crit. e- density that laser freq. ω cannot propagate"""
+    omega_l = get_omega_l(lambda0)
+    return epsilon_0*m_e*omega_l**2 / e**2
+
 def get_critical_power(lambda0, n_e):
     """Calculate critical power for relativistic self-focusing (W)."""
     omega_l = get_omega_l(lambda0)

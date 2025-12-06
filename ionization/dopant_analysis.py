@@ -8,6 +8,9 @@ injection thresholds, and wakefield nonlinearity.
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.colors as mcolors
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 from openpmd_viewer import OpenPMDTimeSeries
 from openpmd_viewer.addons import LpaDiagnostics
 from scipy.constants import c, e, m_e, epsilon_0, pi
@@ -51,6 +54,62 @@ def load_data(a0,dopant_species, mode):
         print(f"Warning: Data not found for a0={a0}, mode={mode}, dopant={dopant_species} at {path}")
         return None
     return LpaDiagnostics(path)
+
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
+
+def make_alpha_smooth(n_bins, x0=0.45, k=6.0, alpha_min=0.0, alpha_max=1.0):
+    """
+    Smooth logistic alpha, explicitly mapped so:
+      r = 0  -> alpha_min
+      r = 1  -> alpha_max
+    """
+    r = np.linspace(0.0, 1.0, n_bins)
+
+    # raw logistic
+    L = 1.0 / (1.0 + np.exp(-k * (r - x0)))
+
+    # values at the ends of [0,1]
+    L0 = 1.0 / (1.0 + np.exp(-k * (0.0 - x0)))
+    L1 = 1.0 / (1.0 + np.exp(-k * (1.0 - x0)))
+
+    # normalize to [0, 1] on this interval
+    Ln = (L - L0) / (L1 - L0)
+
+    alpha = alpha_min + (alpha_max - alpha_min) * Ln
+    return np.clip(alpha, 0.0, 1.0)
+
+
+def get_transparent_inferno(
+    n_bins=512,
+    desat_factor=0.3,
+    x0=0.45,
+    k=6.0,
+    alpha_min=0.0,
+    alpha_max=1.0,
+):
+    inferno = plt.get_cmap("inferno")
+    # clip dark part to remove black
+    colors = inferno(np.linspace(0.20, 1.00, n_bins))
+
+    # desaturate toward white
+    if desat_factor > 0:
+        white = np.array([1.0, 1.0, 1.0])
+        colors[:, :3] = colors[:, :3] * (1 - desat_factor) + white * desat_factor
+
+    # smooth alpha
+    alpha = make_alpha_smooth(
+        n_bins,
+        x0=x0,
+        k=k,
+        alpha_min=alpha_min,
+        alpha_max=alpha_max,
+    )
+    colors[:, 3] = alpha
+
+    return mcolors.LinearSegmentedColormap.from_list("inferno_smooth", colors)
 
 # ==========================================
 # PLOTS
@@ -195,127 +254,120 @@ def plot_dopant_comparison():
     print("Saved: dopant_charge_comparison.png")
     plt.close()
 
-def plot_laser_envelope():
-    print("\nGenerating Plot : Laser Envelope...")
-
-    ts = load_data(2.5, 'N', 'doped')
-    if ts is None:
-        return
-
-    # Use the last available iteration
-    iteration = ts.iterations[20]
-
-    # Get laser envelope
-    # pol='y' assumes polarization in y direction
-    envelope, info = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
-    
-    # Plot
-    fig, ax = plt.subplots(figsize=(8, 5))
-    
-    im = ax.imshow(envelope, origin='lower', aspect='auto', cmap='inferno')
-    
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Electric Field Envelope (V/m)')
-    
-    ax.set_xlabel('$z$ (µm)')
-    ax.set_ylabel('$r$ (µm)')
-    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
-    ax.set_title(f'Laser Envelope (t = {t_fs:.1f} fs)')
-    
-    plt.tight_layout()
-    filename = 'laser_envelope.png'
-    plt.savefig(filename, dpi=300)
-    print(f"Saved: {filename}")
-    plt.close()
-
-
 def plot_e_density(a0_target, dopant_species):
     """
-    Plots the plasma density along with the laser profile
+    Plots the plasma density along with the laser profile using correct masking and scaling.
     """
     print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
 
     mode = 'doped'
     label = f'{dopant_species}-Doped'
 
-    # Create figure with 1 subplot
-    fig, ax = plt.subplots(figsize=(8, 5))
-
+    # Load Data (Assuming load_data is defined elsewhere in your scope)
     ts = load_data(a0_target, dopant_species, mode)
 
     if ts is None:
-        ax.text(0.5, 0.5, "Data Not Available", ha='center')
-        plt.close()
+        print("Data Not Available")
         return
 
     # Use last iteration or change it
-    iteration_idx = 20
+    iteration_idx = 180
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
-    # Get charge density (rho)
+    # --- 1. GET PLASMA DENSITY ---
     rho, info_rho = ts.get_field(field='rho', iteration=iteration)
     
-    z_rho = info_rho.z
-    r_rho = info_rho.r
+    # Convert to relative density (assuming n_e_target and e are global constants)
+    # Note: ensure n_e_target and e are defined in your script
+    rho_rel = -rho / n_e_target / e 
+    
+    # Get coordinates for extent
+    z_rho = info_rho.z * 1e6 # Convert to microns
+    r_rho = info_rho.r * 1e6
+    extent_rho = [z_rho.min(), z_rho.max(), r_rho.min(), r_rho.max()]
 
-    # Get laser envelope
-    laser, laser_info = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
+    # --- 2. GET LASER ENVELOPE ---
+    laser, info_laser = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
+    
+    # Get coordinates for laser extent (CRITICAL FOR ALIGNMENT)
+    z_laser = info_laser.z * 1e6 # Convert to microns
+    r_laser = info_laser.r * 1e6
+    extent_laser = [z_laser.min(), z_laser.max(), r_laser.min(), r_laser.max()]
 
-    # Get longitudinal electric field Ez (mode 0 - axisymmetric wake)
-    Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, 
-                                m=0, slice_across='r')
-    z_Ez = info_Ez.z
+    # --- 3. GET ELECTRIC FIELD Ez ---
+    Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, m=0, slice_across='r')
+    z_Ez = info_Ez.z * 1e6 # Convert to microns
+    Ez_GV = Ez / 1e9       # Convert to GV/m
+
+    # --- PLOTTING ---
+    fig, ax = plt.subplots(figsize=(10, 5)) # Slightly wider for better aspect ratio
+
+    # Layer 1: Plasma Density
+
+    colors = ['1', '0.5', '0']
+    nodes = [0.0, 0.01, 1.0]
+    cmap = LinearSegmentedColormap.from_list("mycmap", list(zip(nodes, colors)))
+
+
+    im_rho = ax.imshow(rho_rel,
+                       extent=extent_rho,
+                       origin='lower',
+                       aspect='auto',
+                       cmap='grey_r',
+                       vmin=0, vmax=1)
     
-    # Convert Ez to GV/m
-    Ez_GV = Ez / 1e9
+    # Colorbar for Density
+    cbar = plt.colorbar(im_rho, ax=ax, pad=0.02)
+    cbar.set_label(r'$n_e/n_0$', fontsize=10)
     
-    # Convert charge density to relative
-    # rho is C/m^3. 
-    # to C/cm^3: / 1e6
-    rho_cm3 = -rho / n_e_target / e
+    # Layer 2: Laser envelope
     
-    
-    # Plot charge density
-    rho_percentile = 100
-    rho_max = np.percentile(np.abs(rho_cm3), rho_percentile)
-    
-    im_rho = ax.imshow(rho_cm3,
-                    extent=[z_rho.min()*1e6, z_rho.max()*1e6,
-                            r_rho.min()*1e6, r_rho.max()*1e6],
-                    origin='lower',
-                    aspect='auto',
-                    cmap='Greens',
-                    vmin=0,
-                    vmax=1)
-    
+    cmp_laser = get_transparent_inferno(
+    n_bins=512,
+    desat_factor=0.3,
+    x0=0.2,     # move transition toward higher intensities
+    k=10.0,      # smaller k = softer, more gradual fade
+    alpha_min=0.0,  # don't let outskirts go fully transparent
+    alpha_max=0.85)
+
+
     im_laser = ax.imshow(laser,
-                    origin='lower',
-                    aspect='auto',
-                    cmap='inferno')
-    
-    cbar = plt.colorbar(im_rho, ax=ax, pad=0.15)
-    cbar.set_label(r'$n_e/n_0$ (cm$^{-3}$)', fontsize=10)
-    
-    # Twin axis for Ez
+                         cmap=cmp_laser,
+                         interpolation='bicubic',
+                         extent=extent_laser, # THIS FIXES THE SQUISHED LINE
+                         origin='lower',
+                         aspect='auto',
+                         vmin=0)
+
+    # --- TWIN AXIS FOR Ez ---
     ax2 = ax.twinx()
-    ax2.plot(z_Ez * 1e6, Ez_GV, color='grey', linewidth=2, alpha=0.8, label='$E_z$')
-    ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.5)
     
-    ax2.set_ylim(-1000, 1000) 
+    # Plot Ez on top
+    # Using a bright color (like Cyan or Blue) often pops better against black/inferno
+    ax2.plot(z_Ez, Ez_GV, color='cyan', linewidth=1.5, alpha=0.9, label='$E_z$')
+    ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
     
-    ax.set_xlabel('$z$ (µm)')
-    ax.set_ylabel('$r$ (µm)')
+    # Manually setting x-limits ensures both plots are locked to the same view
+    ax.set_xlim(z_rho.min(), z_rho.max())
+    
+    # Labels
+    ax.set_xlabel(r'$z \; (\mu m)$', fontsize=12)
+    ax.set_ylabel(r'$r \; (\mu m)$', fontsize=12)
     ax.set_title(f"{label} (t = {t_fs:.1f} fs)")
     
-    ax2.set_ylabel('$E_z$ (GV/m)', color='grey')
-    
-    ax2.tick_params(axis='y', labelcolor='grey')
-        
-    fig.suptitle(f'Wakefield Structure ({dopant_species}-doped)', fontsize=14, y=1.02)
+    # Right Axis Styling
+    ax2.set_ylabel(r'$E_z$ (GV/m)', color='cyan')
+    ax2.tick_params(axis='y', labelcolor='cyan')
+    ax2.set_ylim(-np.max(np.abs(Ez_GV))*1.5, np.max(np.abs(Ez_GV))*1.5) # Auto-scale y-axis symmetrically
+
+    # Legend
+    # Combine legend handles if needed, or just place Ez label manually
+    ax2.text(0.02, 0.9, r'$E_z$ Field', transform=ax2.transAxes, color='cyan', fontweight='bold')
+
     plt.tight_layout()
     
-    filename = f'{dopant_species}_wakefield_structure.png'
+    filename = f'{dopant_species}_wakefield_fixed.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"Saved: {filename}")
     plt.close()
