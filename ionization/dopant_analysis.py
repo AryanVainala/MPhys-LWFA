@@ -271,7 +271,7 @@ def plot_e_density(a0_target, dopant_species):
         return
 
     # Use last iteration or change it
-    iteration_idx = 180
+    iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
@@ -372,29 +372,77 @@ def plot_e_density(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
-def plot_dopant_emittance(a0_target, dopant_species):
-    print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
-    
+def plot_e_injected(a0_target, dopant_species):
+    print(f"\nGenerating Plot : Injected Electron Density (a0={a0_target}, dopant={dopant_species})...")
     mode = 'doped'
-    label = f'{dopant_species}-Doped-Helium'
-    
-    # Create figure with 1 subplot
-    fig, ax = plt.subplots(figsize=(8, 5))
-    
+    label = f'{dopant_species}-Doped'
+
+    # Load Data
     ts = load_data(a0_target, dopant_species, mode)
-    
+
     if ts is None:
-        ax.text(0.5, 0.5, "Data Not Available", ha='center')
-        plt.close()
+        print("Data Not Available")
         return
-    
-    iteration = ts.iterations[len(ts.iterations)//2]
+
+    # Use last iteration
+    iteration_idx = -1
+    iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+
+    # --- GET INJECTED DENSITY ---
+
+    rho, info_rho = ts.get_field(field='rho_electrons_injected', iteration=iteration)
     
-    # Get charge density (rho)
-    emt_proj, emt_slice = ts.get_emittance(iteration=iteration, species="electrons_injected", select=[])
+    # Convert to number density (m^-3)
+    # rho is charge density (C/m^3). Electrons have negative charge.
+    n_injected = -rho / e
     
-    return None
+    # Get coordinates
+    z = info_rho.z * 1e6 # microns
+    r = info_rho.r * 1e6 # microns
+    extent = [z.min(), z.max(), r.min(), r.max()]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    
+    # Plot density
+    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='inferno')
+    
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(r'$n_{injected} \; (m^{-3})$')
+    
+    ax.set_xlabel(r'$z \; (\mu m)$')
+    ax.set_ylabel(r'$r \; (\mu m)$')
+    ax.set_title(f"Injected Electron Density - {label} (t = {t_fs:.1f} fs)")
+    
+    plt.tight_layout()
+    filename = f'{dopant_species}_injected_charge_density.png'
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"Saved: {filename}")
+    plt.close()
+
+def plot_dopant_emittance(a0_target, dopant_species):
+    print(f"\nGenerating Plot : Injected Electron Emittance (a0={a0_target}, dopant={dopant_species})...")
+    mode = 'doped'
+    label = f'{dopant_species}-Doped'
+
+    # Load Data
+    ts = load_data(a0_target, dopant_species, mode)
+
+    if ts is None:
+        print("Data Not Available")
+        return
+
+    # Use last iteration
+    iteration_idx = -1
+    iteration = ts.iterations[iteration_idx]
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+
+    # --- GET INJECTED DENSITY ---
+
+    emittance_x, emittance_y = ts.get_emittance(species='electrons_injected', iteration=iteration, description='projected', select={'uz': [100, None]})
+    print(emittance_x, emittance_y)
+
+
 
 # ==========================================
 # MAIN EXECUTION
@@ -407,7 +455,7 @@ if __name__ == "__main__":
     
     # plot_phase_space(a0, dopant_species=dopant_list[0])
     # plot_dopant_comparison()
-    plot_e_density(a0, 'N')
+    plot_dopant_emittance(a0, 'N')
     # plot_laser_envelope()
 
 
