@@ -33,7 +33,7 @@ plt.rcParams.update({
 
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ne']  # List of dopants to compare
+dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
@@ -437,10 +437,57 @@ def plot_dopant_emittance(a0_target, dopant_species):
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
 
-    # --- GET INJECTED DENSITY ---
+    # Calculate emittance
 
     emittance_x, emittance_y = ts.get_emittance(species='electrons_injected', iteration=iteration, description='projected', select={'uz': [100, None]})
     print(emittance_x, emittance_y)
+
+    # Calculate error of the emittance
+    # 1. Get the raw particle arrays using the same selection as before
+    x, ux, w = ts.get_particle(
+        var_list=['x', 'ux', 'w'], 
+        species='electrons_injected', 
+        iteration=iteration, 
+        select={'uz': [100, None]}  # YOUR ENERGY FILTER
+    )
+
+    # # 2. Calculate Effective Number of Particles (taking weights into account)
+    # # If weights are uniform, N_eff = len(w). If weights vary, use Kish's formula:
+    # N_eff = (np.sum(w)**2) / np.sum(w**2)
+
+    # # 3. Calculate Relative Error
+    # rel_error = 1.0 / np.sqrt(2 * N_eff)
+
+    # print(f"Number of macroparticles used: {len(w)}")
+    # print(f"Effective N: {N_eff:.2f}")
+    # print(f"Estimated Relative Error: {rel_error * 100:.2f}%")
+
+    def calc_emittance(x, ux, w):
+        avg_x = np.average(x, weights=w)
+        avg_ux = np.average(ux, weights=w)
+        # Centered moments
+        cov_xx = np.average((x - avg_x)**2, weights=w)
+        cov_uu = np.average((ux - avg_ux)**2, weights=w)
+        cov_xu = np.average((x - avg_x)*(ux - avg_ux), weights=w)
+        return np.sqrt(cov_xx*cov_uu - cov_xu**2)
+
+    # 3. Bootstrap (Resampling)
+    n_resamples = 50
+    emittance_values = []
+    n_particles = len(x)
+
+    for _ in range(n_resamples):
+        # Random indices with replacement
+        indices = np.random.randint(0, n_particles, n_particles)
+        e_val = calc_emittance(x[indices], ux[indices], w[indices])
+        emittance_values.append(e_val)
+
+    # 4. Results
+    mean_emit = np.mean(emittance_values)
+    std_error = np.std(emittance_values)
+
+    print(f"Emittance: {mean_emit:.2e} +/- {std_error:.2e} m-rad")
+    print(f"Relative Error: {std_error/mean_emit * 100:.2f}%")
 
 
 
@@ -455,7 +502,7 @@ if __name__ == "__main__":
     
     # plot_phase_space(a0, dopant_species=dopant_list[0])
     # plot_dopant_comparison()
-    plot_dopant_emittance(a0, 'N')
+    # plot_e_density(a0, 'Ar')
     # plot_laser_envelope()
 
 
