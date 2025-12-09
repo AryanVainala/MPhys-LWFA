@@ -270,7 +270,7 @@ def plot_e_density(a0_target, dopant_species):
         return
 
     # Use last iteration or change it
-    iteration_idx = 20
+    iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
@@ -393,7 +393,7 @@ def plot_e_density(a0_target, dopant_species):
 
     plt.tight_layout()
     
-    filename = f'{dopant_species}_wakefield_fixed.png'
+    filename = f'{dopant_species}_wakefield_fixed_last.png'
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"Saved: {filename}")
     plt.close()
@@ -591,7 +591,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
     # RMS values
     rms_x = np.sqrt(var_x)
     rms_ux = np.sqrt(var_ux)
-
+    
     # Emittance
     emit = np.sqrt(var_x * var_ux - cov_x_ux**2)
 
@@ -617,6 +617,40 @@ def plot_dopant_emittance(a0_target, dopant_species):
     print(f"Emittance of {dopant_species}: {emit_mrad:.2e} +/- {sigma_emit_mrad:.2e} mrad")
     print(f"Relative Error: {sigma_emit/emit * 100:.2f}%")
 
+    # 8. Plot Transverse Phase Space
+    x_microns = x * 1e6
+    
+    # Calculate auto-scaling limits (e.g., +/- 5 sigma) to zoom in on the beam
+    mean_x_um = avg_x * 1e6
+    rms_x_um = rms_x * 1e6
+    
+    n_sigma = 5 # Number of standard deviations to plot
+    
+    xlims = [mean_x_um - n_sigma*rms_x_um, mean_x_um + n_sigma*rms_x_um]
+    ylims = [avg_ux - n_sigma*rms_ux, avg_ux + n_sigma*rms_ux]
+    
+    fig, ax = plt.subplots(figsize=(6, 5))
+    
+    # Use range parameter to bin only the relevant area
+    h = ax.hist2d(x_microns, ux, bins=100, range=[xlims, ylims], weights=w, cmap='inferno')
+    
+    cbar = plt.colorbar(h[3], ax=ax)
+    cbar.set_label('Charge Density (arb.)')
+    
+    ax.set_xlabel(r'$x \; [\mu m]$')
+    ax.set_ylabel(r'$p_x / m_e c$')
+    ax.set_title(f'Transverse Phase Space ({dopant_species}-doped)')
+    
+    # Ensure axes match the histogram range
+    ax.set_xlim(xlims)
+    ax.set_ylim(ylims)
+    
+    plt.tight_layout()
+    filename = f'{dopant_species}_transverse_phase_space.png'
+    plt.savefig(filename, dpi=300)
+    print(f"Saved: {filename}")
+    plt.close()
+
 
 
 # ==========================================
@@ -638,8 +672,8 @@ if __name__ == "__main__":
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-        # plot_dopant_emittance(a0_target=a0, dopant_species=species)
+        plot_dopant_emittance(a0_target=a0, dopant_species=species)
         # plot_phase_space(a0_target=a0, dopant_species=species)
-        plot_e_density(a0_target=a0, dopant_species=species)
+        # plot_e_density(a0_target=a0, dopant_species=species)
         pass
     
