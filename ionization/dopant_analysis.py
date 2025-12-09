@@ -175,7 +175,7 @@ def plot_injected_charge():
     
     # Metric: Total Injected Charge (pC)
     # We define "Injected" as E > 2 MeV to exclude bulk fluid
-    E_threshold_MeV = 100
+    E_threshold_MeV = 50
     
     charges = []
     species_labels = []
@@ -235,9 +235,9 @@ def plot_injected_charge():
     bars = ax.bar(species_labels, charges, color=['red', 'green', 'blue'], alpha=0.7, label='Doped (Signal)')
     
     # Add He noise line
-    ax.axhline(y=Q_he, color='grey', linestyle='--', label='Pure He (Noise)')
+    ax.axhline(y=Q_he, color='grey', linestyle='--', label='Pure He')
     
-    ax.set_ylabel(f'Injected Charge (pC) [E > {E_threshold_MeV} MeV]')
+    ax.set_ylabel(f'Integrated Injected Charge (pC) [E > {E_threshold_MeV} MeV]')
     ax.set_title(f'Injected Charge Comparison (a0={a0})')
     ax.legend()
     
@@ -270,7 +270,7 @@ def plot_e_density(a0_target, dopant_species):
         return
 
     # Use last iteration or change it
-    iteration_idx = -1
+    iteration_idx = 20
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
@@ -299,6 +299,23 @@ def plot_e_density(a0_target, dopant_species):
     z_Ez = info_Ez.z * 1e6 # Convert to microns
     Ez_GV = Ez / 1e9       # Convert to GV/m
 
+    # --- 4. GET INJECTED ELECTRON DENSITY ---
+    n_inj_masked = None
+    extent_inj = None
+    try:
+        rho_inj, info_inj = ts.get_field(field='rho_electrons_injected', iteration=iteration)
+        n_inj = -rho_inj / e
+        
+        # Mask low density noise
+        threshold = np.max(n_inj) * 0.01 # 1% threshold
+        n_inj_masked = np.ma.masked_where(n_inj < threshold, n_inj)
+        
+        z_inj = info_inj.z * 1e6
+        r_inj = info_inj.r * 1e6
+        extent_inj = [z_inj.min(), z_inj.max(), r_inj.min(), r_inj.max()]
+    except Exception as err:
+        print(f"Could not load injected electrons: {err}")
+
     # --- PLOTTING ---
     fig, ax = plt.subplots(figsize=(10, 5)) # Slightly wider for better aspect ratio
 
@@ -319,6 +336,16 @@ def plot_e_density(a0_target, dopant_species):
     # Colorbar for Density
     cbar = plt.colorbar(im_rho, ax=ax, pad=0.02)
     cbar.set_label(r'$n_e/n_0$', fontsize=10)
+
+    # Layer 1.5: Injected Electrons (Blue Cloud)
+    if n_inj_masked is not None:
+        im_inj = ax.imshow(n_inj_masked,
+                           extent=extent_inj,
+                           origin='lower',
+                           aspect='auto',
+                           cmap='Blues',
+                           alpha=0.8,
+                           vmin=0)
     
     # Layer 2: Laser envelope
     
@@ -344,7 +371,7 @@ def plot_e_density(a0_target, dopant_species):
     
     # Plot Ez on top
     # Using a bright color (like Cyan or Blue) often pops better against black/inferno
-    ax2.plot(z_Ez, Ez_GV, color='cyan', linewidth=1.5, alpha=0.9, label='$E_z$')
+    ax2.plot(z_Ez, Ez_GV, color='blue', linewidth=1.5, alpha=0.9, label='$E_z$')
     ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
     
     # Manually setting x-limits ensures both plots are locked to the same view
@@ -356,13 +383,13 @@ def plot_e_density(a0_target, dopant_species):
     ax.set_title(f"{label} (t = {t_fs:.1f} fs)")
     
     # Right Axis Styling
-    ax2.set_ylabel(r'$E_z$ (GV/m)', color='cyan')
-    ax2.tick_params(axis='y', labelcolor='cyan')
+    ax2.set_ylabel(r'$E_z$ (GV/m)', color='blue')
+    ax2.tick_params(axis='y', labelcolor='blue')
     ax2.set_ylim(-np.max(np.abs(Ez_GV))*1.5, np.max(np.abs(Ez_GV))*1.5) # Auto-scale y-axis symmetrically
 
     # Legend
     # Combine legend handles if needed, or just place Ez label manually
-    ax2.text(0.02, 0.9, r'$E_z$ Field', transform=ax2.transAxes, color='cyan', fontweight='bold')
+    ax2.text(0.02, 0.9, r'$E_z$ Field', transform=ax2.transAxes, color='blue', fontweight='bold')
 
     plt.tight_layout()
     
@@ -511,7 +538,7 @@ def plot_energy_spectra_comparison(a0_target):
         ax.set_title(config['title'])
         ax.set_xlabel("Energy [MeV]")
         ax.set_ylabel("dQ/dE [pC/MeV]")
-        ax.set_xlim(left=0)
+        ax.set_xlim(left=E_min_cutoff)
         ax.set_ylim(bottom=0)
 
     plt.suptitle(f"Injected Electron Energy Spectra (a0={a0_target})", fontsize=16)
@@ -539,13 +566,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
 
-    # Calculate emittance
-
-    emittance_x, emittance_y = ts.get_emittance(species='electrons_injected', iteration=iteration, description='projected', select={'uz': [100, None]})
-    print(emittance_x, emittance_y)
-
-    # Calculate error of the emittance
-    # 1. Get the raw particle arrays using the same selection as before
+    # 1. Get the raw particle arrays
     x, ux, w = ts.get_particle(
         var_list=['x', 'ux', 'w'], 
         species='electrons_injected', 
@@ -553,43 +574,48 @@ def plot_dopant_emittance(a0_target, dopant_species):
         select={'uz': [100, None]}  # YOUR ENERGY FILTER
     )
 
-    # # 2. Calculate Effective Number of Particles (taking weights into account)
-    # # If weights are uniform, N_eff = len(w). If weights vary, use Kish's formula:
-    # N_eff = (np.sum(w)**2) / np.sum(w**2)
+    if len(x) == 0:
+        print("No particles found for emittance calculation.")
+        return
 
-    # # 3. Calculate Relative Error
-    # rel_error = 1.0 / np.sqrt(2 * N_eff)
+    # 2. Calculate Observables
+    # Weighted means
+    avg_x = np.average(x, weights=w)
+    avg_ux = np.average(ux, weights=w)
 
-    # print(f"Number of macroparticles used: {len(w)}")
-    # print(f"Effective N: {N_eff:.2f}")
-    # print(f"Estimated Relative Error: {rel_error * 100:.2f}%")
+    # Centered variances and covariance
+    var_x = np.average((x - avg_x)**2, weights=w)
+    var_ux = np.average((ux - avg_ux)**2, weights=w)
+    cov_x_ux = np.average((x - avg_x)*(ux - avg_ux), weights=w)
 
-    def calc_emittance(x, ux, w):
-        avg_x = np.average(x, weights=w)
-        avg_ux = np.average(ux, weights=w)
-        # Centered moments
-        cov_xx = np.average((x - avg_x)**2, weights=w)
-        cov_uu = np.average((ux - avg_ux)**2, weights=w)
-        cov_xu = np.average((x - avg_x)*(ux - avg_ux), weights=w)
-        return np.sqrt(cov_xx*cov_uu - cov_xu**2)
+    # RMS values
+    rms_x = np.sqrt(var_x)
+    rms_ux = np.sqrt(var_ux)
 
-    # 3. Bootstrap (Resampling)
-    n_resamples = 50
-    emittance_values = []
-    n_particles = len(x)
+    # Emittance
+    emit = np.sqrt(var_x * var_ux - cov_x_ux**2)
 
-    for _ in range(n_resamples):
-        # Random indices with replacement
-        indices = np.random.randint(0, n_particles, n_particles)
-        e_val = calc_emittance(x[indices], ux[indices], w[indices])
-        emittance_values.append(e_val)
+    # 3. Calculate Errors on Observables
+    N = len(w)
+    sigma_rms_x = rms_x / np.sqrt(N)
+    sigma_rms_ux = rms_ux / np.sqrt(N)
+    sigma_cov = np.abs(cov_x_ux) / np.sqrt(N)
 
-    # 4. Results
-    mean_emit = np.mean(emittance_values)
-    std_error = np.std(emittance_values)
+    # 4. Propagate Errors to Emittance
+    term_1 = 4 * (rms_x**2) * (rms_ux**4) * (sigma_rms_x**2) + 4 * (rms_x**4) * (rms_ux**2) * (sigma_rms_ux**2)
+    term_2 = 4 * (cov_x_ux**2) * (sigma_cov**2)
+    sigma_emit_sq = term_1 + term_2
 
-    print(f"Emittance: {mean_emit:.2e} +/- {std_error:.2e} m-rad")
-    print(f"Relative Error: {std_error/mean_emit * 100:.2f}%")
+    # 5. Final Error
+    sigma_emit = np.sqrt(sigma_emit_sq) / (2 * emit)
+
+    # 6. Convert to milli-radians
+    emit_mrad = emit * 1e6
+    sigma_emit_mrad = sigma_emit * 1e6
+
+    # 7. Output
+    print(f"Emittance of {dopant_species}: {emit_mrad:.2e} +/- {sigma_emit_mrad:.2e} mrad")
+    print(f"Relative Error: {sigma_emit/emit * 100:.2f}%")
 
 
 
@@ -603,15 +629,17 @@ if __name__ == "__main__":
     # plot_dopant_comparison()
     
     # plot_phase_space(a0, dopant_species='Ar')
-    plot_injected_charge
+    # plot_injected_charge()
     # plot_e_density(a0, 'Ar')
     # plot_laser_envelope()
+    
 
-    plot_energy_spectra_comparison(a0)
+    # plot_energy_spectra_comparison(a0)
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-    #     plot_phase_space(a0_target=a0, dopant_species=species)
-    #     plot_e_density(a0_target=a0, dopant_species=species)
+        # plot_dopant_emittance(a0_target=a0, dopant_species=species)
+        # plot_phase_space(a0_target=a0, dopant_species=species)
+        plot_e_density(a0_target=a0, dopant_species=species)
         pass
     
