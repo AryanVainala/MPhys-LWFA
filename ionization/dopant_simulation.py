@@ -36,8 +36,8 @@ n_order = -1  # -1 for infinite order (single GPU)
 n_e_target = 3.5e18*1.e6  # electrons/m³
 
 # Simulation configuration
-mode = 'pure_he'  # 'pure_he' or 'doped'
-dopant_species = 'N'  # 'N', 'Ne', 'Ar'
+mode = 'doped'  # 'pure_he' or 'doped'
+dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters
@@ -61,7 +61,7 @@ p_nt = 4  # Particles per cell along theta
 v_window = c
 
 # Diagnostics
-diag_period = 500 # Higher means less frequent measurements
+diag_period = 200 # Higher means less frequent measurements
 save_checkpoints = False
 checkpoint_period = 500
 use_restart = False
@@ -153,6 +153,10 @@ skin_depth = c / omega_p
 zmax = 10.e-6
 zmin = -30.e-6
 rmax = 20.e-6
+# Bigger box 60 µm
+# zmax = 15.e-6
+# zmin = -45.e-6
+# rmax = 15.e-6
 
 # Calculate box lengths
 Lz = zmax - zmin
@@ -163,11 +167,11 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 10.0
+dz_target = lambda0 / 10
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 5.0
+dr_target = skin_depth / 5
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes

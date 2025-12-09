@@ -34,10 +34,10 @@ plt.rcParams.update({
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
 dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
-base_dir = './diags_doped'
+base_dir = './diags_doped_3.5_lr'
 
 # Physical parameters
-n_e_target = 7.0e24
+n_e_target = 3.5e24
 omega_p = np.sqrt(n_e_target * e**2 / (m_e * epsilon_0))
 E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx formula
 
@@ -80,7 +80,6 @@ def make_alpha_smooth(n_bins, x0=0.45, k=6.0, alpha_min=0.0, alpha_max=1.0):
 
     alpha = alpha_min + (alpha_max - alpha_min) * Ln
     return np.clip(alpha, 0.0, 1.0)
-
 
 def get_transparent_inferno(
     n_bins=512,
@@ -171,12 +170,12 @@ def plot_phase_space(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
-def plot_dopant_comparison():
+def plot_injected_charge():
     print(f"\nGenerating Plot : Injected Charge Comparison (a0={a0})...")
     
     # Metric: Total Injected Charge (pC)
     # We define "Injected" as E > 2 MeV to exclude bulk fluid
-    E_threshold_MeV = 2.0
+    E_threshold_MeV = 100
     
     charges = []
     species_labels = []
@@ -420,6 +419,109 @@ def plot_e_injected(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
+def plot_energy_spectra_comparison(a0_target):
+    print(f"\nGenerating Plot : Energy Spectra Comparison (a0={a0_target})...")
+    
+    # Setup figure
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.flatten() # Flatten to 1D array for easy indexing
+    
+    # Define plot order and parameters
+    plot_configs = [
+        {'title': 'Pure Helium (Reference)', 'species': None, 'mode': 'pure_he', 'color': 'grey'},
+        {'title': 'Nitrogen (N) Doped',     'species': 'N',   'mode': 'doped',   'color': 'black'},
+        {'title': 'Argon (Ar) Doped',        'species': 'Ar',  'mode': 'doped',   'color': 'black'},
+        {'title': 'Neon (Ne) Doped',         'species': 'Ne',  'mode': 'doped',   'color': 'black'}
+    ]
+    
+    E_min_cutoff = 50.0 # MeV
+    bin_width = 1.0 # MeV
+    
+    for i, config in enumerate(plot_configs):
+        ax = axes[i]
+        species = config['species']
+        mode = config['mode']
+        
+        ts = load_data(a0_target, species, mode)
+        
+        if ts is None:
+            ax.text(0.5, 0.5, "Data Not Available", ha='center', va='center', transform=ax.transAxes)
+            continue
+            
+        iteration = ts.iterations[-1]
+        
+        # Determine particle species name to fetch
+        if mode == 'pure_he':
+            species_names = ['electrons_bulk', 'electrons_he']
+        else:
+            species_names = ['electrons_injected', 'electrons_dopant']
+            
+        uz, w = np.array([]), np.array([])
+        
+        for s_name in species_names:
+            try:
+                uz, w = ts.get_particle(['uz', 'w'], species=s_name, iteration=iteration)
+                if len(uz) > 0:
+                    break
+            except:
+                continue
+                
+        if len(uz) == 0:
+            ax.text(0.5, 0.5, "No Particles Found", ha='center', va='center', transform=ax.transAxes)
+            continue
+            
+        # Calculate Energy
+        E_MeV = (np.sqrt(uz**2 + 1) - 1) * 0.511
+        
+        # Filter
+        mask = E_MeV > E_min_cutoff
+        E_selected = E_MeV[mask]
+        w_selected = w[mask]
+        
+        if len(E_selected) == 0:
+            ax.text(0.5, 0.5, f"No Particles > {E_min_cutoff} MeV", ha='center', va='center', transform=ax.transAxes)
+            continue
+
+        # Histogram
+        E_max = np.max(E_selected)
+        if E_max <= E_min_cutoff:
+             bins = np.array([E_min_cutoff, E_min_cutoff + bin_width])
+        else:
+             bins = np.arange(np.floor(np.min(E_selected)), np.ceil(E_max) + bin_width, bin_width)
+        
+        hist_weights, bin_edges = np.histogram(E_selected, bins=bins, weights=w_selected)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Convert to dQ/dE [pC/MeV]
+        dQ_dE = (hist_weights * e * 1e12) / bin_width
+        
+        # Plot
+        ax.plot(bin_centers, dQ_dE, color=config['color'], linewidth=2)
+        ax.fill_between(bin_centers, dQ_dE, color=config['color'], alpha=0.1)
+        
+        # Statistics
+        total_charge = np.sum(w_selected) * e * 1e12 # pC
+        mean_energy = np.average(E_selected, weights=w_selected)
+        
+        stats_text = f"Q = {total_charge:.1f} pC\n<E> = {mean_energy:.1f} MeV"
+        ax.text(0.95, 0.95, stats_text, transform=ax.transAxes, 
+                ha='right', va='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Styling
+        ax.set_title(config['title'])
+        ax.set_xlabel("Energy [MeV]")
+        ax.set_ylabel("dQ/dE [pC/MeV]")
+        ax.set_xlim(left=0)
+        ax.set_ylim(bottom=0)
+
+    plt.suptitle(f"Injected Electron Energy Spectra (a0={a0_target})", fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    filename = f'energy_spectra_comparison_a{a0_target}.png'
+    plt.savefig(filename, dpi=300)
+    print(f"Saved: {filename}")
+    plt.close()
+
 def plot_dopant_emittance(a0_target, dopant_species):
     print(f"\nGenerating Plot : Injected Electron Emittance (a0={a0_target}, dopant={dopant_species})...")
     mode = 'doped'
@@ -500,11 +602,12 @@ if __name__ == "__main__":
     # Run Charge Comparison
     # plot_dopant_comparison()
     
-    # plot_phase_space(a0, dopant_species=dopant_list[0])
-    # plot_dopant_comparison()
+    # plot_phase_space(a0, dopant_species='Ar')
+    plot_injected_charge
     # plot_e_density(a0, 'Ar')
     # plot_laser_envelope()
 
+    plot_energy_spectra_comparison(a0)
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:

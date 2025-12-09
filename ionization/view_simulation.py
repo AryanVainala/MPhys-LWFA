@@ -12,11 +12,11 @@ from matplotlib.widgets import Slider
 import numpy as np
 from scipy.constants import c, e, m_e, epsilon_0
 
-ts = OpenPMDTimeSeries('./diags_doped/a2.5_doped_N/hdf5')
+ts = OpenPMDTimeSeries('./diags_doped_3.5_lr/a2.5_doped_Ar/hdf5')
 
 # Simulation parameters (from lwfa_script.py)
 lambda0 = 0.8e-6      # Laser wavelength
-n_e = 4.e18*1.e6      # Plasma density
+n_e = 3.5.e18*1.e6      # Plasma density
 omega_p = np.sqrt(n_e * e**2 / (m_e * epsilon_0))
 lambda_p = 2*np.pi*c/omega_p
 
@@ -37,12 +37,17 @@ def update_plot(iteration):
     
     # Get plasma wake (mode 0 - axisymmetric)
     E_plasma, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, m=0, slice_across='r')
+
+    z_rho = info_rho.z * 1e6 # Convert to microns
+    r_rho = info_rho.r * 1e6
+    extent_rho = [z_rho.min(), z_rho.max(), r_rho.min(), r_rho.max()]
+
     
     # Get laser field (mode 1 - linearly polarized)
     E_laser, _ = ts.get_field(field='E', coord='z', iteration=iteration, m=1, slice_across='r')
     
-    z_E = info_Ez.z
-    
+    z_E = info_Ez.z * 1e6
+
     # Clear axes
     ax.clear()
     if hasattr(ax, 'ax2'):
@@ -51,7 +56,7 @@ def update_plot(iteration):
     # Plot density
     im = ax.imshow(
         rho,
-        extent=[z.min(), z.max(), r.min(), r.max()],
+        extent=extent_rho,
         origin='lower',
         aspect='auto',
         cmap='Greens',
