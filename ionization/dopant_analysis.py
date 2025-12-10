@@ -34,7 +34,7 @@ plt.rcParams.update({
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
 dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
-base_dir = './diags_doped_3.5_lr'
+base_dir = './diags_doped'
 
 # Physical parameters
 n_e_target = 3.5e24
@@ -307,7 +307,7 @@ def plot_e_density(a0_target, dopant_species):
         n_inj = -rho_inj / e
         
         # Mask low density noise
-        threshold = np.max(n_inj) * 0.01 # 1% threshold
+        threshold = np.max(n_inj) * 1 # 1% threshold
         n_inj_masked = np.ma.masked_where(n_inj < threshold, n_inj)
         
         z_inj = info_inj.z * 1e6
@@ -567,8 +567,8 @@ def plot_dopant_emittance(a0_target, dopant_species):
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
 
     # 1. Get the raw particle arrays
-    x, ux, w = ts.get_particle(
-        var_list=['x', 'ux', 'w'], 
+    x, y, ux, uy, w = ts.get_particle(
+        var_list=['x', 'y', 'ux', 'uy', 'w'], 
         species='electrons_injected', 
         iteration=iteration, 
         select={'uz': [100, None]}  # YOUR ENERGY FILTER
@@ -578,73 +578,81 @@ def plot_dopant_emittance(a0_target, dopant_species):
         print("No particles found for emittance calculation.")
         return
 
-    # 2. Calculate Observables
-    # Weighted means
-    avg_x = np.average(x, weights=w)
-    avg_ux = np.average(ux, weights=w)
+    # --- HELPER FOR EMITTANCE CALCULATION ---
+    def calculate_emittance_axis(pos, mom, weights):
+        # Weighted means
+        avg_pos = np.average(pos, weights=weights)
+        avg_mom = np.average(mom, weights=weights)
 
-    # Centered variances and covariance
-    var_x = np.average((x - avg_x)**2, weights=w)
-    var_ux = np.average((ux - avg_ux)**2, weights=w)
-    cov_x_ux = np.average((x - avg_x)*(ux - avg_ux), weights=w)
+        # Centered variances and covariance
+        var_pos = np.average((pos - avg_pos)**2, weights=weights)
+        var_mom = np.average((mom - avg_mom)**2, weights=weights)
+        cov_pos_mom = np.average((pos - avg_pos)*(mom - avg_mom), weights=weights)
 
-    # RMS values
-    rms_x = np.sqrt(var_x)
-    rms_ux = np.sqrt(var_ux)
+        # RMS values
+        rms_pos = np.sqrt(var_pos)
+        rms_mom = np.sqrt(var_mom)
+        
+        # Emittance
+        emit = np.sqrt(var_pos * var_mom - cov_pos_mom**2)
+
+        # Errors
+        N = len(weights)
+        sigma_rms_pos = rms_pos / np.sqrt(N)
+        sigma_rms_mom = rms_mom / np.sqrt(N)
+        sigma_cov = np.abs(cov_pos_mom) / np.sqrt(N)
+
+        term_1 = 4 * (rms_pos**2) * (rms_mom**4) * (sigma_rms_pos**2) + 4 * (rms_pos**4) * (rms_mom**2) * (sigma_rms_mom**2)
+        term_2 = 4 * (cov_pos_mom**2) * (sigma_cov**2)
+        sigma_emit_sq = term_1 + term_2
+        sigma_emit = np.sqrt(sigma_emit_sq) / (2 * emit)
+        
+        return emit, sigma_emit, avg_pos, avg_mom, rms_pos, rms_mom
+
+    # --- CALCULATE FOR X AND Y ---
+    emit_x, sigma_emit_x, avg_x, avg_ux, rms_x, rms_ux = calculate_emittance_axis(x, ux, w)
+    emit_y, sigma_emit_y, avg_y, avg_uy, rms_y, rms_uy = calculate_emittance_axis(y, uy, w)
+
+    # --- OUTPUT ---
+    print(f"Emittance X ({dopant_species}): {emit_x*1e6:.2e} +/- {sigma_emit_x*1e6:.2e} mrad")
+    print(f"Emittance Y ({dopant_species}): {emit_y*1e6:.2e} +/- {sigma_emit_y*1e6:.2e} mrad")
+
+    # --- PLOTTING (2 Subplots) ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
     
-    # Emittance
-    emit = np.sqrt(var_x * var_ux - cov_x_ux**2)
-
-    # 3. Calculate Errors on Observables
-    N = len(w)
-    sigma_rms_x = rms_x / np.sqrt(N)
-    sigma_rms_ux = rms_ux / np.sqrt(N)
-    sigma_cov = np.abs(cov_x_ux) / np.sqrt(N)
-
-    # 4. Propagate Errors to Emittance
-    term_1 = 4 * (rms_x**2) * (rms_ux**4) * (sigma_rms_x**2) + 4 * (rms_x**4) * (rms_ux**2) * (sigma_rms_ux**2)
-    term_2 = 4 * (cov_x_ux**2) * (sigma_cov**2)
-    sigma_emit_sq = term_1 + term_2
-
-    # 5. Final Error
-    sigma_emit = np.sqrt(sigma_emit_sq) / (2 * emit)
-
-    # 6. Convert to milli-radians
-    emit_mrad = emit * 1e6
-    sigma_emit_mrad = sigma_emit * 1e6
-
-    # 7. Output
-    print(f"Emittance of {dopant_species}: {emit_mrad:.2e} +/- {sigma_emit_mrad:.2e} mrad")
-    print(f"Relative Error: {sigma_emit/emit * 100:.2f}%")
-
-    # 8. Plot Transverse Phase Space
+    n_sigma = 5
+    
+    # Plot X Phase Space
     x_microns = x * 1e6
-    
-    # Calculate auto-scaling limits (e.g., +/- 5 sigma) to zoom in on the beam
     mean_x_um = avg_x * 1e6
     rms_x_um = rms_x * 1e6
+    xlims_x = [mean_x_um - n_sigma*rms_x_um, mean_x_um + n_sigma*rms_x_um]
+    ylims_x = [avg_ux - n_sigma*rms_ux, avg_ux + n_sigma*rms_ux]
     
-    n_sigma = 5 # Number of standard deviations to plot
+    h1 = ax1.hist2d(x_microns, ux, bins=100, range=[xlims_x, ylims_x], weights=w, cmap='inferno')
+    ax1.set_xlabel(r'$x \; [\mu m]$')
+    ax1.set_ylabel(r'$p_x / m_e c$')
+    ax1.set_title(f'X Phase Space')
+    ax1.set_xlim(xlims_x)
+    ax1.set_ylim(ylims_x)
+    plt.colorbar(h1[3], ax=ax1, label='Charge Density (arb.)')
+
+    # Plot Y Phase Space
+    y_microns = y * 1e6
+    mean_y_um = avg_y * 1e6
+    rms_y_um = rms_y * 1e6
+    xlims_y = [mean_y_um - n_sigma*rms_y_um, mean_y_um + n_sigma*rms_y_um]
+    ylims_y = [avg_uy - n_sigma*rms_uy, avg_uy + n_sigma*rms_uy]
     
-    xlims = [mean_x_um - n_sigma*rms_x_um, mean_x_um + n_sigma*rms_x_um]
-    ylims = [avg_ux - n_sigma*rms_ux, avg_ux + n_sigma*rms_ux]
-    
-    fig, ax = plt.subplots(figsize=(6, 5))
-    
-    # Use range parameter to bin only the relevant area
-    h = ax.hist2d(x_microns, ux, bins=100, range=[xlims, ylims], weights=w, cmap='inferno')
-    
-    cbar = plt.colorbar(h[3], ax=ax)
-    cbar.set_label('Charge Density (arb.)')
-    
-    ax.set_xlabel(r'$x \; [\mu m]$')
-    ax.set_ylabel(r'$p_x / m_e c$')
-    ax.set_title(f'Transverse Phase Space ({dopant_species}-doped)')
-    
-    # Ensure axes match the histogram range
-    ax.set_xlim(xlims)
-    ax.set_ylim(ylims)
-    
+    h2 = ax2.hist2d(y_microns, uy, bins=100, range=[xlims_y, ylims_y], weights=w, cmap='inferno')
+    ax2.set_xlabel(r'$y \; [\mu m]$')
+    ax2.set_ylabel(r'$p_y / m_e c$')
+    ax2.set_title(f'Y Phase Space')
+    ax2.set_xlim(xlims_y)
+    ax2.set_ylim(ylims_y)
+    plt.colorbar(h2[3], ax=ax2, label='Charge Density (arb.)')
+
+    plt.suptitle(f"Transverse Phase Space ({dopant_species}-doped)", fontsize=14)
     plt.tight_layout()
     filename = f'{dopant_species}_transverse_phase_space.png'
     plt.savefig(filename, dpi=300)
@@ -664,7 +672,7 @@ if __name__ == "__main__":
     
     # plot_phase_space(a0, dopant_species='Ar')
     # plot_injected_charge()
-    # plot_e_density(a0, 'Ar')
+    plot_e_density(a0, 'N')
     # plot_laser_envelope()
     
 
@@ -672,7 +680,7 @@ if __name__ == "__main__":
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-        plot_dopant_emittance(a0_target=a0, dopant_species=species)
+        # plot_dopant_emittance(a0_target=a0, dopant_species=species)
         # plot_phase_space(a0_target=a0, dopant_species=species)
         # plot_e_density(a0_target=a0, dopant_species=species)
         pass

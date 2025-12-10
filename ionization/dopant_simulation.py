@@ -61,7 +61,7 @@ p_nt = 4  # Particles per cell along theta
 v_window = c
 
 # Diagnostics
-diag_period = 200 # Higher means less frequent measurements
+diag_period = 1000 # Higher means less frequent measurements
 save_checkpoints = False
 checkpoint_period = 500
 use_restart = False
@@ -167,11 +167,11 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 10
+dz_target = lambda0 / 30
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 5
+dr_target = skin_depth / 30
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes

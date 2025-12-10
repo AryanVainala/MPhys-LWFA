@@ -12,11 +12,11 @@ from matplotlib.widgets import Slider
 import numpy as np
 from scipy.constants import c, e, m_e, epsilon_0
 
-ts = OpenPMDTimeSeries('./diags_doped_3.5_lr/a2.5_doped_Ar/hdf5')
+ts = OpenPMDTimeSeries('./diags_doped/a2.5_doped_N/hdf5')
 
 # Simulation parameters (from lwfa_script.py)
 lambda0 = 0.8e-6      # Laser wavelength
-n_e = 3.5.e18*1.e6      # Plasma density
+n_e = 3.5e18*1.e6      # Plasma density
 omega_p = np.sqrt(n_e * e**2 / (m_e * epsilon_0))
 lambda_p = 2*np.pi*c/omega_p
 
@@ -59,7 +59,7 @@ def update_plot(iteration):
         extent=extent_rho,
         origin='lower',
         aspect='auto',
-        cmap='Greens',
+        cmap='grey_r',
         vmax = 0
     )
     
