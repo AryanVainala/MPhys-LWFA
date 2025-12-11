@@ -260,12 +260,12 @@ def plot_e_density(a0_target, dopant_species):
                        extent=extent_rho,
                        origin='lower',
                        aspect='auto',
-                       cmap='gist_gray_r',
+                       cmap='binary',
                        interpolation='bilinear',
-                       vmax = 4,
+                       vmax = np.percentile(n_bulk, 99.9),
                        vmin = 0
             )
-    im_rho.cmap.set_over('red')
+    im_rho.cmap.set_over('black')
 
     # Horizontal colorbar for bulk density at bottom left
     cbar = plt.colorbar(im_rho, cax=cax_bulk, orientation='horizontal')
@@ -276,9 +276,9 @@ def plot_e_density(a0_target, dopant_species):
     if n_inj is not None:
 
         # Create a transparent-to-hot colormap
-        colors_inj = plt.cm.Blues(np.linspace(0.2, 1, 500))
+        colors_inj = plt.cm.BuPu(np.linspace(0.2, 1, 5000))
         colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
-        colors_inj[50:, 3] = np.linspace(0.5, 0.9, 450)  # Rest is more opaque
+        colors_inj[50:, 3] = np.linspace(0.5, 0.9, 4950)  # Rest is more opaque
         cmap_inj = LinearSegmentedColormap.from_list('blues_alpha', colors_inj)
 
         im_inj = ax.imshow(n_inj,
@@ -287,9 +287,8 @@ def plot_e_density(a0_target, dopant_species):
                            aspect='auto',
                            cmap=cmap_inj,
                            interpolation='bilinear',
-                           vmax = 5
+                           vmax = None
               )
-        im_inj.cmap.set_over('red')
         
         # Horizontal colorbar for injected electrons at bottom right
         cbar_inj = plt.colorbar(im_inj, cax=cax_inj, orientation='horizontal')
@@ -334,10 +333,7 @@ def plot_e_density(a0_target, dopant_species):
     # Right Axis Styling
     ax2.set_ylabel(r'$E_z$ (GV/m)', color='blue')
     ax2.tick_params(axis='y', labelcolor='blue')
-    ax2.set_ylim(-np.max(np.abs(Ez_GV))*1.5, np.max(np.abs(Ez_GV))*1.5)
-
-    # Legend
-    ax2.text(0.02, 0.9, r'$E_z$ Field', transform=ax2.transAxes, color='blue', fontweight='bold')
+    ax2.set_ylim(-1000, 1000)
 
     # Don't use tight_layout with gridspec - it's already handled
     
@@ -572,7 +568,7 @@ if __name__ == "__main__":
     
     # plot_phase_space(a0, dopant_species='Ar')
     # plot_e_injected(a0, 'N')
-    plot_e_density(a0, 'Ar')
+    plot_e_density(a0, 'N')
     # plot_laser_envelope()
     
 
