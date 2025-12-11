@@ -37,7 +37,7 @@ n_e_target = 3.5e18*1.e6  # electrons/m³
 
 # Simulation configuration
 mode = 'doped'  # 'pure_he' or 'doped'
-dopant_species = 'Ar'  # 'N', 'Ne', 'Ar'
+dopant_species = 'Ne'  # 'N', 'Ne', 'Ar'
 dopant_conc = 0.01  # Dopant concentration (fraction)
 
 # Laser parameters

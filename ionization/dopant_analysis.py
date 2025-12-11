@@ -166,7 +166,7 @@ def plot_phase_space(a0_target, dopant_species):
 
     filename = f'{dopant_species}_phase_space.png'
     plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
 
@@ -249,7 +249,7 @@ def plot_injected_charge():
                 ha='center', va='bottom')
 
     plt.tight_layout()
-    plt.savefig('dopant_charge_comparison.png', dpi=300)
+    plt.savefig('dopant_charge_comparison.png', dpi=800)
     print("Saved: dopant_charge_comparison.png")
     plt.close()
 
@@ -260,7 +260,6 @@ def plot_e_density(a0_target, dopant_species):
     print(f"\nGenerating Plot : Wakefield Structure (a0={a0_target}, dopant={dopant_species})...")
 
     mode = 'doped'
-    label = f'{dopant_species}-Doped'
 
     # Load Data (Assuming load_data is defined elsewhere in your scope)
     ts = load_data(a0_target, dopant_species, mode)
@@ -275,11 +274,13 @@ def plot_e_density(a0_target, dopant_species):
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
     
     # --- 1. GET PLASMA DENSITY ---
-    rho, info_rho = ts.get_field(field='rho', iteration=iteration)
-    
-    # Convert to relative density (assuming n_e_target and e are global constants)
-    # Note: ensure n_e_target and e are defined in your script
-    rho_rel = -rho / n_e_target / e 
+    # Try to get bulk electrons specifically to avoid plotting injected electrons in the background
+    try:
+        rho, info_rho = ts.get_field(field='rho_electrons_bulk', iteration=iteration)
+        print("Using 'rho_electrons_bulk' for wakefield structure.")
+    except:
+        print("Could not find 'rho_electrons_bulk', falling back to total 'rho'.")
+        rho, info_rho = ts.get_field(field='rho', iteration=iteration)
     
     # Get coordinates for extent
     z_rho = info_rho.z * 1e6 # Convert to microns
@@ -300,16 +301,10 @@ def plot_e_density(a0_target, dopant_species):
     Ez_GV = Ez / 1e9       # Convert to GV/m
 
     # --- 4. GET INJECTED ELECTRON DENSITY ---
-    n_inj_masked = None
+    n_inj = None
     extent_inj = None
     try:
         rho_inj, info_inj = ts.get_field(field='rho_electrons_injected', iteration=iteration)
-        n_inj = -rho_inj / e
-        
-        # Mask low density noise
-        threshold = np.max(n_inj) * 1 # 1% threshold
-        n_inj_masked = np.ma.masked_where(n_inj < threshold, n_inj)
-        
         z_inj = info_inj.z * 1e6
         r_inj = info_inj.r * 1e6
         extent_inj = [z_inj.min(), z_inj.max(), r_inj.min(), r_inj.max()]
@@ -317,51 +312,89 @@ def plot_e_density(a0_target, dopant_species):
         print(f"Could not load injected electrons: {err}")
 
     # --- PLOTTING ---
-    fig, ax = plt.subplots(figsize=(10, 5)) # Slightly wider for better aspect ratio
+    # Use gridspec for proper colorbar placement
+    fig = plt.figure(figsize=(12, 6))
+    
+    # Create gridspec: main plot on top, two colorbars at the bottom
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 0.05], width_ratios=[1, 1],
+                          hspace=0.25, wspace=0.3)
+    
+    ax = fig.add_subplot(gs[0, :])  # Main plot spans both columns
+    cax_bulk = fig.add_subplot(gs[1, 0])  # Left colorbar for bulk
+    cax_inj = fig.add_subplot(gs[1, 1])   # Right colorbar for injected
 
-    # Layer 1: Plasma Density
+    # Convert to relative density
+    n_bulk = -rho / e
+    n_inj =  -rho_inj / e
 
-    colors = ['1', '0.5', '0']
-    nodes = [0.0, 0.01, 1.0]
-    cmap = LinearSegmentedColormap.from_list("mycmap", list(zip(nodes, colors)))
+    # Calculate n0
+    z_indices = n_bulk.shape[1]
+    sample_region = int(z_indices * 0.9) 
+    
+    # Take the median of the far-right region to exclude any weird noise spikes
+    n0 = np.median(n_bulk[:, sample_region:])
 
+    # Normalise the densities
+    n_bulk = -rho / e / n0
+    n_inj =  -rho_inj / e / n0
 
-    im_rho = ax.imshow(rho_rel,
+    # Layer 1: Plasma Density (Bulk)
+    im_rho = ax.imshow(n_bulk,
                        extent=extent_rho,
                        origin='lower',
                        aspect='auto',
-                       cmap='grey_r',
-                       vmin=0, vmax=1)
-    
-    # Colorbar for Density
-    cbar = plt.colorbar(im_rho, ax=ax, pad=0.02)
-    cbar.set_label(r'$n_e/n_0$', fontsize=10)
+                       cmap='gist_gray_r',
+                       interpolation='bilinear',
+                       vmax = 4,
+                       vmin = 0
+            )
+    im_rho.cmap.set_over('red')
 
-    # Layer 1.5: Injected Electrons (Blue Cloud)
-    if n_inj_masked is not None:
-        im_inj = ax.imshow(n_inj_masked,
+    # Horizontal colorbar for bulk density at bottom left
+    cbar = plt.colorbar(im_rho, cax=cax_bulk, orientation='horizontal')
+    cbar.set_label(r'Bulk Plasma: $n_e/n_0$', fontsize=10)
+
+    # Layer 1.5: Injected Electrons with SEPARATE scaling
+    im_inj = None
+    if n_inj is not None:
+
+        # Create a transparent-to-hot colormap
+        colors_inj = plt.cm.Blues(np.linspace(0.2, 1, 500))
+        colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
+        colors_inj[50:, 3] = np.linspace(0.5, 0.9, 450)  # Rest is more opaque
+        cmap_inj = LinearSegmentedColormap.from_list('blues_alpha', colors_inj)
+
+        im_inj = ax.imshow(n_inj,
                            extent=extent_inj,
                            origin='lower',
                            aspect='auto',
-                           cmap='Blues',
-                           alpha=0.8,
-                           vmin=0)
+                           cmap=cmap_inj,
+                           interpolation='bilinear',
+                           vmax = 5
+              )
+        im_inj.cmap.set_over('red')
+        
+        # Horizontal colorbar for injected electrons at bottom right
+        cbar_inj = plt.colorbar(im_inj, cax=cax_inj, orientation='horizontal')
+        cbar_inj.set_label(r'Injected Electrons: $n_e/n_0$', fontsize=10)
+    else:
+        cax_inj.axis('off')  # Hide if no injected electrons
     
     # Layer 2: Laser envelope
     
     cmp_laser = get_transparent_inferno(
     n_bins=512,
-    desat_factor=0.3,
+    desat_factor=0.15,
     x0=0.2,     # move transition toward higher intensities
-    k=10.0,      # smaller k = softer, more gradual fade
-    alpha_min=0.0,  # don't let outskirts go fully transparent
+    k=12.0,      # larger k = softer, more gradual fade
+    alpha_min=0.0,  # 0 means outskirts are fully transparent
     alpha_max=0.85)
 
 
     im_laser = ax.imshow(laser,
                          cmap=cmp_laser,
                          interpolation='bicubic',
-                         extent=extent_laser, # THIS FIXES THE SQUISHED LINE
+                         extent=extent_laser,
                          origin='lower',
                          aspect='auto',
                          vmin=0)
@@ -370,7 +403,6 @@ def plot_e_density(a0_target, dopant_species):
     ax2 = ax.twinx()
     
     # Plot Ez on top
-    # Using a bright color (like Cyan or Blue) often pops better against black/inferno
     ax2.plot(z_Ez, Ez_GV, color='blue', linewidth=1.5, alpha=0.9, label='$E_z$')
     ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
     
@@ -380,69 +412,20 @@ def plot_e_density(a0_target, dopant_species):
     # Labels
     ax.set_xlabel(r'$z \; (\mu m)$', fontsize=12)
     ax.set_ylabel(r'$r \; (\mu m)$', fontsize=12)
-    ax.set_title(f"{label} (t = {t_fs:.1f} fs)")
+    ax.set_title(f"{dopant_species}-Doped He at (t = {t_fs:.1f} fs)")
     
     # Right Axis Styling
     ax2.set_ylabel(r'$E_z$ (GV/m)', color='blue')
     ax2.tick_params(axis='y', labelcolor='blue')
-    ax2.set_ylim(-np.max(np.abs(Ez_GV))*1.5, np.max(np.abs(Ez_GV))*1.5) # Auto-scale y-axis symmetrically
+    ax2.set_ylim(-np.max(np.abs(Ez_GV))*1.5, np.max(np.abs(Ez_GV))*1.5)
 
     # Legend
-    # Combine legend handles if needed, or just place Ez label manually
     ax2.text(0.02, 0.9, r'$E_z$ Field', transform=ax2.transAxes, color='blue', fontweight='bold')
 
-    plt.tight_layout()
+    # Don't use tight_layout with gridspec - it's already handled
     
     filename = f'{dopant_species}_wakefield_fixed_last.png'
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"Saved: {filename}")
-    plt.close()
-
-def plot_e_injected(a0_target, dopant_species):
-    print(f"\nGenerating Plot : Injected Electron Density (a0={a0_target}, dopant={dopant_species})...")
-    mode = 'doped'
-    label = f'{dopant_species}-Doped'
-
-    # Load Data
-    ts = load_data(a0_target, dopant_species, mode)
-
-    if ts is None:
-        print("Data Not Available")
-        return
-
-    # Use last iteration
-    iteration_idx = -1
-    iteration = ts.iterations[iteration_idx]
-    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
-
-    # --- GET INJECTED DENSITY ---
-
-    rho, info_rho = ts.get_field(field='rho_electrons_injected', iteration=iteration)
-    
-    # Convert to number density (m^-3)
-    # rho is charge density (C/m^3). Electrons have negative charge.
-    n_injected = -rho / e
-    
-    # Get coordinates
-    z = info_rho.z * 1e6 # microns
-    r = info_rho.r * 1e6 # microns
-    extent = [z.min(), z.max(), r.min(), r.max()]
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    
-    # Plot density
-    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='inferno')
-    
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label(r'$n_{injected} \; (m^{-3})$')
-    
-    ax.set_xlabel(r'$z \; (\mu m)$')
-    ax.set_ylabel(r'$r \; (\mu m)$')
-    ax.set_title(f"Injected Electron Density - {label} (t = {t_fs:.1f} fs)")
-    
-    plt.tight_layout()
-    filename = f'{dopant_species}_injected_charge_density.png'
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=800, bbox_inches='tight')
     print(f"Saved: {filename}")
     plt.close()
 
@@ -545,7 +528,7 @@ def plot_energy_spectra_comparison(a0_target):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
     filename = f'energy_spectra_comparison_a{a0_target}.png'
-    plt.savefig(filename, dpi=300)
+    plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
 
@@ -655,7 +638,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
     plt.suptitle(f"Transverse Phase Space ({dopant_species}-doped)", fontsize=14)
     plt.tight_layout()
     filename = f'{dopant_species}_transverse_phase_space.png'
-    plt.savefig(filename, dpi=300)
+    plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
 
@@ -671,8 +654,8 @@ if __name__ == "__main__":
     # plot_dopant_comparison()
     
     # plot_phase_space(a0, dopant_species='Ar')
-    # plot_injected_charge()
-    plot_e_density(a0, 'N')
+    # plot_e_injected(a0, 'N')
+    plot_e_density(a0, 'Ar')
     # plot_laser_envelope()
     
 

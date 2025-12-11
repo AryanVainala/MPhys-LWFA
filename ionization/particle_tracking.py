@@ -144,7 +144,7 @@ try:
     plt.plot(np.array(t_data['z'])*1e6, np.array(t_data['r'])*1e6, 
              color='cyan', linewidth=2, label='Trapped')
 
-    # Plot Untrapped (Red Dashed)
+    # Plot Untrapped (Red Dashed)f
     u_data = trajectories[id_untrap]
     plt.plot(np.array(u_data['z'])*1e6, np.array(u_data['r'])*1e6, 
              color='red', linestyle='--', linewidth=2, label='Untrapped')
