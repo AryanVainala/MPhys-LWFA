@@ -262,8 +262,8 @@ def plot_e_density(a0_target, dopant_species):
                        aspect='auto',
                        cmap='binary',
                        interpolation='bilinear',
-                       vmax = np.percentile(n_bulk, 99.9),
-                       vmin = 0
+                       vmin = np.percentile(n_bulk, 0),
+                       vmax = np.percentile(n_bulk, 99.95)
             )
     im_rho.cmap.set_over('black')
 
@@ -280,7 +280,7 @@ def plot_e_density(a0_target, dopant_species):
         colors_inj = plt.cm.BuGn(np.linspace(0.9, 1, n_bins_inj))
         # colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
         # colors_inj[50:, 3] = np.linspace(0.5, 0.9, n_bins_inj-50)  # Rest is more opaque
-        alpha_curve = np.linspace(0, 1, n_bins_inj) ** 1
+        alpha_curve = np.linspace(0, 1, n_bins_inj) ** 0.5
         colors_inj[:, 3] = alpha_curve
         cmap_inj = LinearSegmentedColormap.from_list('blues_alpha', colors_inj)
 
@@ -290,7 +290,8 @@ def plot_e_density(a0_target, dopant_species):
                            aspect='auto',
                            cmap=cmap_inj,
                            interpolation='bilinear',
-                           vmax = np.percentile(n_inj, 99.99)
+                           vmin = np.percentile(n_inj, 0),     # For Neon clip it np.percentile(n_inj, 98.99), argon 0.01
+                           vmax = np.percentile(n_inj, 99.95)    #                  np.percentile(n_inj, 99.9) 
               )
         
         # Horizontal colorbar for injected electrons at bottom right
@@ -303,7 +304,7 @@ def plot_e_density(a0_target, dopant_species):
     
     cmp_laser = get_transparent_inferno(
     n_bins=512,
-    desat_factor=0.15,
+    desat_factor=0.2,
     x0=0.2,     # move transition toward higher intensities
     k=12.0,      # larger k = softer, more gradual fade
     alpha_min=0.0,  # 0 means outskirts are fully transparent
@@ -378,7 +379,7 @@ def plot_e_injected(a0_target, dopant_species):
     fig, ax = plt.subplots(figsize=(10, 5))
 
     # Plot density
-    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='inferno')
+    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='Greens')
 
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label(r'$n_{injected} \; (m^{-3})$')
@@ -637,6 +638,123 @@ def plot_dopant_emittance(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
+def analyse_injection_density_distribution(a0_target, dopant_species):
+    """
+    Analyses the distribution of injected and bulk electron density values.
+    Generates a histogram of density values.
+    """
+    print(f"\nAnalysing Injection and Bulk Density Distribution (a0={a0_target}, dopant={dopant_species})...")
+
+    mode = 'doped'
+    ts = load_data(a0_target, dopant_species, mode)
+
+    if ts is None:
+        print("Data Not Available")
+        return
+
+    # Use last iteration
+    iteration_idx = -1
+    iteration = ts.iterations[iteration_idx]
+    
+    # --- GET PLASMA DENSITY (BULK) ---
+    try:
+        rho_bulk, _ = ts.get_field(field='rho_electrons_bulk', iteration=iteration)
+    except:
+        rho_bulk, _ = ts.get_field(field='rho', iteration=iteration)
+    
+    n_bulk_raw = -rho_bulk / e
+    z_indices = n_bulk_raw.shape[1]
+    sample_region = int(z_indices * 0.9) 
+    n0 = np.median(n_bulk_raw[:, sample_region:])
+    
+    n_bulk = n_bulk_raw / n0
+    
+    # --- GET INJECTED ELECTRON DENSITY ---
+    try:
+        rho_inj, _ = ts.get_field(field='rho_electrons_injected', iteration=iteration)
+    except Exception as err:
+        print(f"Could not load injected electrons: {err}")
+        rho_inj = None
+
+    # Normalize Injected
+    if rho_inj is not None:
+        n_inj = -rho_inj / e / n0
+    else:
+        n_inj = np.array([])
+    
+    # Flatten and filter
+    flat_bulk = n_bulk.flatten()
+    flat_bulk = flat_bulk[flat_bulk > 1e-5]
+    
+    flat_inj = n_inj.flatten()
+    flat_inj = flat_inj[flat_inj > 1e-5]
+
+    # Statistics
+    print(f"--- Bulk Density Statistics ---")
+    print(f"Mean: {np.mean(flat_bulk):.2e}, Median: {np.median(flat_bulk):.2e}")
+    print(f"99th Percentile: {np.percentile(flat_bulk, 99):.2e}")
+
+    if len(flat_inj) > 0:
+        print(f"--- Injected Density Statistics ---")
+        print(f"Min: {np.min(flat_inj):.2e}")
+        print(f"Max: {np.max(flat_inj):.2e}")
+        print(f"Mean: {np.mean(flat_inj):.2e}")
+        print(f"Median: {np.median(flat_inj):.2e}")
+        print(f"90th Percentile: {np.percentile(flat_inj, 90):.2e}")
+        print(f"99th Percentile: {np.percentile(flat_inj, 99):.2e}")
+        print(f"99.9th Percentile: {np.percentile(flat_inj, 99.9):.2e}")
+
+    # Plot Histogram
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Log-Log Histogram
+    # Bulk
+    ax.hist(flat_bulk, bins=100, log=True, color='grey', alpha=0.5, label='Bulk Electrons')
+    
+    # Injected
+    if len(flat_inj) > 0:
+        ax.hist(flat_inj, bins=100, log=True, color='blue', alpha=0.7, label='Injected Electrons')
+        
+        # Add percentile lines for injected
+        p99 = np.percentile(flat_inj, 99)
+        ax.axvline(p99, color='red', linestyle='--', label=f'Inj 99th %: {p99:.2e}')
+
+    ax.set_xlabel(r'Density $n/n_0$')
+    ax.set_ylabel('Frequency (Number of Grid Points)')
+    ax.set_title(f'Distribution of Density ({dopant_species})')
+    ax.grid(True, which="both", ls="-", alpha=0.2)
+    ax.legend()
+
+    # Add top axis for percentiles (based on injected if available, else bulk)
+    if len(flat_inj) > 0:
+        target_flat = flat_inj
+        label_prefix = "Inj"
+    else:
+        target_flat = flat_bulk
+        label_prefix = "Bulk"
+
+    ax2 = ax.twiny()
+    percentile_levels = [0, 50, 90, 99, 100]
+    tick_vals = np.percentile(target_flat, percentile_levels)
+    
+    ax2.set_xlim(ax.get_xlim())
+    # Ensure ticks are within plot limits
+    valid_ticks = []
+    valid_labels = []
+    current_xlim = ax.get_xlim()
+    for p, val in zip(percentile_levels, tick_vals):
+        if current_xlim[0] <= val <= current_xlim[1]:
+            valid_ticks.append(val)
+            valid_labels.append(f"{label_prefix} {p}%")
+            
+    ax2.set_xticks(valid_ticks)
+    ax2.set_xticklabels(valid_labels, rotation=45, fontsize=8)
+    ax2.set_xlabel(f"{label_prefix} Percentile")
+
+    filename = f'{dopant_species}_density_distribution.png'
+    plt.savefig(filename, dpi=300)
+    print(f"Saved distribution plot: {filename}")
+    plt.close()
 
 
 # ==========================================
@@ -649,8 +767,12 @@ if __name__ == "__main__":
     # plot_dopant_comparison()
     
     # plot_phase_space(a0, dopant_species='Ar')
-    plot_e_injected(a0, 'Ne')
-    # plot_e_density(a0, 'Ne')
+    # plot_e_injected(a0, 'Ne')
+    
+    # Analyse density distribution to help set vmin/vmax
+    # analyse_injection_density_distribution(a0, 'Ar')
+    
+    plot_e_density(a0, 'N')
     # plot_laser_envelope()
     # plot_dopant_emittance(a0, 'Ar')
     
