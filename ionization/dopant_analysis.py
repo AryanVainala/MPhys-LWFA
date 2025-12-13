@@ -33,7 +33,7 @@ plt.rcParams.update({
 
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ne', 'Ar']  # List of dopants to compare
+dopant_list = ['N', 'Ar']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
@@ -276,9 +276,12 @@ def plot_e_density(a0_target, dopant_species):
     if n_inj is not None:
 
         # Create a transparent-to-hot colormap
-        colors_inj = plt.cm.BuPu(np.linspace(0.2, 1, 5000))
-        colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
-        colors_inj[50:, 3] = np.linspace(0.5, 0.9, 4950)  # Rest is more opaque
+        n_bins_inj = 5000
+        colors_inj = plt.cm.BuGn(np.linspace(0.9, 1, n_bins_inj))
+        # colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
+        # colors_inj[50:, 3] = np.linspace(0.5, 0.9, n_bins_inj-50)  # Rest is more opaque
+        alpha_curve = np.linspace(0, 1, n_bins_inj) ** 1
+        colors_inj[:, 3] = alpha_curve
         cmap_inj = LinearSegmentedColormap.from_list('blues_alpha', colors_inj)
 
         im_inj = ax.imshow(n_inj,
@@ -287,7 +290,7 @@ def plot_e_density(a0_target, dopant_species):
                            aspect='auto',
                            cmap=cmap_inj,
                            interpolation='bilinear',
-                           vmax = None
+                           vmax = np.percentile(n_inj, 99.99)
               )
         
         # Horizontal colorbar for injected electrons at bottom right
@@ -319,7 +322,7 @@ def plot_e_density(a0_target, dopant_species):
     ax2 = ax.twinx()
     
     # Plot Ez on top
-    ax2.plot(z_Ez, Ez_GV, color='blue', linewidth=1.5, alpha=0.9, label='$E_z$')
+    ax2.plot(z_Ez, Ez_GV, color="#0606B6", linewidth=1.5, alpha=0.9, label='$E_z$')
     ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
     
     # Manually setting x-limits ensures both plots are locked to the same view
@@ -331,8 +334,8 @@ def plot_e_density(a0_target, dopant_species):
     ax.set_title(f"{dopant_species}-Doped He at (t = {t_fs:.1f} fs)")
     
     # Right Axis Styling
-    ax2.set_ylabel(r'$E_z$ (GV/m)', color='blue')
-    ax2.tick_params(axis='y', labelcolor='blue')
+    ax2.set_ylabel(r'$E_z$ (GV/m)', color='#0606B6')
+    ax2.tick_params(axis='y', labelcolor='#0606B6')
     ax2.set_ylim(-1000, 1000)
 
     # Don't use tight_layout with gridspec - it's already handled
@@ -342,19 +345,66 @@ def plot_e_density(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
+def plot_e_injected(a0_target, dopant_species):
+    print(f"\nGenerating Plot : Injected Electron Density (a0={a0_target}, dopant={dopant_species})...")
+
+    mode = 'doped'
+    label = f'{dopant_species}-Doped'
+
+    # Load Data
+    ts = load_data(a0_target, dopant_species, mode)
+
+    if ts is None:
+        print("Data Not Available")
+        return
+
+    # Use last iteration
+    iteration_idx = -1
+    iteration = ts.iterations[iteration_idx]
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+
+    # --- GET INJECTED DENSITY ---
+    rho, info_rho = ts.get_field(field='rho_electrons_injected', iteration=iteration)
+
+    # Convert to number density (m^-3)
+    # rho is charge density (C/m^3). Electrons have negative charge.
+    n_injected = -rho / e
+
+    # Get coordinates
+    z = info_rho.z * 1e6  # microns
+    r = info_rho.r * 1e6  # microns
+    extent = [z.min(), z.max(), r.min(), r.max()]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    # Plot density
+    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='inferno')
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label(r'$n_{injected} \; (m^{-3})$')
+
+    ax.set_xlabel(r'$z \; (\mu m)$')
+    ax.set_ylabel(r'$r \; (\mu m)$')
+    ax.set_title(f"Injected Electron Density - {label} (t = {t_fs:.1f} fs)")
+
+    plt.tight_layout()
+    filename = f'{dopant_species}_injected_charge_density.png'
+    plt.savefig(filename, dpi=800, bbox_inches='tight')
+    print(f"Saved: {filename}")
+    plt.close()
+
 def plot_energy_spectra_comparison(a0_target):
     print(f"\nGenerating Plot : Energy Spectra Comparison (a0={a0_target})...")
     
     # Setup figure
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     axes = axes.flatten() # Flatten to 1D array for easy indexing
     
     # Define plot order and parameters
     plot_configs = [
         {'title': 'Pure Helium (Reference)', 'species': None, 'mode': 'pure_he', 'color': 'grey'},
         {'title': 'Nitrogen (N) Doped',     'species': 'N',   'mode': 'doped',   'color': 'black'},
-        {'title': 'Argon (Ar) Doped',        'species': 'Ar',  'mode': 'doped',   'color': 'black'},
-        {'title': 'Neon (Ne) Doped',         'species': 'Ne',  'mode': 'doped',   'color': 'black'}
+        {'title': 'Argon (Ar) Doped',        'species': 'Ar',  'mode': 'doped',   'color': 'black'}
     ]
     
     E_min_cutoff = 50.0 # MeV
@@ -432,8 +482,8 @@ def plot_energy_spectra_comparison(a0_target):
         
         # Styling
         ax.set_title(config['title'])
-        ax.set_xlabel("Energy [MeV]")
-        ax.set_ylabel("dQ/dE [pC/MeV]")
+        ax.set_xlabel(r"Energy (MeV)")
+        ax.set_ylabel(r"$dQ/dE$ (pC/MeV)")
         ax.set_xlim(left=E_min_cutoff)
         ax.set_ylim(bottom=0)
 
@@ -467,7 +517,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
         var_list=['x', 'y', 'ux', 'uy', 'w'], 
         species='electrons_injected', 
         iteration=iteration, 
-        select={'uz': [100, None]}  # YOUR ENERGY FILTER
+        select={'uz': [100, None]}  # YOUR ENERGY/MOMENTA FILTER
     )
 
     if len(x) == 0:
@@ -514,38 +564,70 @@ def plot_dopant_emittance(a0_target, dopant_species):
     print(f"Emittance Y ({dopant_species}): {emit_y*1e6:.2e} +/- {sigma_emit_y*1e6:.2e} mrad")
 
     # --- PLOTTING (2 Subplots) ---
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
-    n_sigma = 5
+    # Manual limits toggle
+    use_manual_limits = True
+    manual_xlim = [-6, 6]  # in µm
+    manual_ylim = [-6, 6]  # in p/mec
+    
+    n_sigma_x = 3.5
     
     # Plot X Phase Space
     x_microns = x * 1e6
     mean_x_um = avg_x * 1e6
     rms_x_um = rms_x * 1e6
-    xlims_x = [mean_x_um - n_sigma*rms_x_um, mean_x_um + n_sigma*rms_x_um]
-    ylims_x = [avg_ux - n_sigma*rms_ux, avg_ux + n_sigma*rms_ux]
     
-    h1 = ax1.hist2d(x_microns, ux, bins=100, range=[xlims_x, ylims_x], weights=w, cmap='inferno')
-    ax1.set_xlabel(r'$x \; [\mu m]$')
+    if use_manual_limits:
+        xlims_x = manual_xlim
+        ylims_x = manual_ylim
+    else:
+        xlims_x = [mean_x_um - n_sigma_x*rms_x_um, mean_x_um + n_sigma_x*rms_x_um]
+        ylims_x = [avg_ux - n_sigma_x*rms_ux, avg_ux + n_sigma_x*rms_ux]
+    
+    # Colorbar limits
+    cbar_vmin = 0
+
+    h1 = ax1.hist2d(x_microns, ux, bins=250, range=[xlims_x, ylims_x], weights=w*1e-4, cmap='turbo', vmin=cbar_vmin, vmax=25)
+    ax1.set_xlabel(r'$x \; (\mu m)$')
     ax1.set_ylabel(r'$p_x / m_e c$')
     ax1.set_title(f'X Phase Space')
-    ax1.set_xlim(xlims_x)
-    ax1.set_ylim(ylims_x)
+    
+    # Apply limits: manual if enabled, otherwise n_sigma based
+    if use_manual_limits:
+        ax1.set_xlim(manual_xlim)
+        ax1.set_ylim(manual_ylim)
+    else:
+        ax1.set_xlim(xlims_x)
+        ax1.set_ylim(ylims_x)
     plt.colorbar(h1[3], ax=ax1, label='Charge Density (arb.)')
+
+    n_sigma_y = 3.5
 
     # Plot Y Phase Space
     y_microns = y * 1e6
     mean_y_um = avg_y * 1e6
     rms_y_um = rms_y * 1e6
-    xlims_y = [mean_y_um - n_sigma*rms_y_um, mean_y_um + n_sigma*rms_y_um]
-    ylims_y = [avg_uy - n_sigma*rms_uy, avg_uy + n_sigma*rms_uy]
     
-    h2 = ax2.hist2d(y_microns, uy, bins=100, range=[xlims_y, ylims_y], weights=w, cmap='inferno')
+    if use_manual_limits:
+        xlims_y = manual_xlim
+        ylims_y = manual_ylim
+    else:
+        xlims_y = [mean_y_um - n_sigma_y*rms_y_um, mean_y_um + n_sigma_y*rms_y_um]
+        ylims_y = [avg_uy - n_sigma_y*rms_uy, avg_uy + n_sigma_y*rms_uy]
+    
+    h2 = ax2.hist2d(y_microns, uy, bins=250, range=[xlims_y, ylims_y], weights=w*1e-4, cmap='turbo', vmin=cbar_vmin, vmax=75)
     ax2.set_xlabel(r'$y \; [\mu m]$')
     ax2.set_ylabel(r'$p_y / m_e c$')
     ax2.set_title(f'Y Phase Space')
-    ax2.set_xlim(xlims_y)
-    ax2.set_ylim(ylims_y)
+    
+    # Apply limits: manual if enabled, otherwise n_sigma based
+    if use_manual_limits:
+        ax2.set_xlim(manual_xlim)
+        ax2.set_ylim(manual_ylim)
+    else:
+        ax2.set_xlim(xlims_y)
+        ax2.set_ylim(ylims_y)
     plt.colorbar(h2[3], ax=ax2, label='Charge Density (arb.)')
 
     plt.suptitle(f"Transverse Phase Space ({dopant_species}-doped)", fontsize=14)
@@ -567,9 +649,10 @@ if __name__ == "__main__":
     # plot_dopant_comparison()
     
     # plot_phase_space(a0, dopant_species='Ar')
-    # plot_e_injected(a0, 'N')
-    plot_e_density(a0, 'N')
+    plot_e_injected(a0, 'Ne')
+    # plot_e_density(a0, 'Ne')
     # plot_laser_envelope()
+    # plot_dopant_emittance(a0, 'Ar')
     
 
     # plot_energy_spectra_comparison(a0)
