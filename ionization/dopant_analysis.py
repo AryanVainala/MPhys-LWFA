@@ -360,7 +360,7 @@ def plot_e_injected(a0_target, dopant_species):
         return
 
     # Use last iteration
-    iteration_idx = -1
+    iteration_idx = 12
     iteration = ts.iterations[iteration_idx]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
 
@@ -496,7 +496,7 @@ def plot_energy_spectra_comparison(a0_target):
     print(f"Saved: {filename}")
     plt.close()
 
-def plot_dopant_emittance(a0_target, dopant_species):
+def plot_dopant_emittance_histogram(a0_target, dopant_species):
     print(f"\nGenerating Plot : Injected Electron Emittance (a0={a0_target}, dopant={dopant_species})...")
     mode = 'doped'
     label = f'{dopant_species}-Doped'
@@ -514,12 +514,14 @@ def plot_dopant_emittance(a0_target, dopant_species):
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
 
     # 1. Get the raw particle arrays
-    x, y, ux, uy, w = ts.get_particle(
-        var_list=['x', 'y', 'ux', 'uy', 'w'], 
+    x, y, z, ux, uy, uz, w = ts.get_particle(
+        var_list=['x', 'y', 'z', 'ux', 'uy', 'uz', 'w'], 
         species='electrons_injected', 
         iteration=iteration, 
         select={'uz': [100, None]}  # YOUR ENERGY/MOMENTA FILTER
     )
+
+    q = w * e * 1e12 
 
     if len(x) == 0:
         print("No particles found for emittance calculation.")
@@ -560,16 +562,22 @@ def plot_dopant_emittance(a0_target, dopant_species):
     emit_x, sigma_emit_x, avg_x, avg_ux, rms_x, rms_ux = calculate_emittance_axis(x, ux, w)
     emit_y, sigma_emit_y, avg_y, avg_uy, rms_y, rms_uy = calculate_emittance_axis(y, uy, w)
 
+    emit_x1, emity_y1 = ts.get_emittance(iteration, species='electrons_injected',select={'uz': [100, None]},
+                     kind='normalized', description='projected')
+    
+    print(emit_x1)
+    print(emity_y1)
+
     # --- OUTPUT ---
     print(f"Emittance X ({dopant_species}): {emit_x*1e6:.2e} +/- {sigma_emit_x*1e6:.2e} mrad")
     print(f"Emittance Y ({dopant_species}): {emit_y*1e6:.2e} +/- {sigma_emit_y*1e6:.2e} mrad")
 
-    # --- PLOTTING (2 Subplots) ---
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    # --- PLOTTING (3 Subplots) ---
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
     
     # Manual limits toggle
     use_manual_limits = True
-    manual_xlim = [-6, 6]  # in µm
+    manual_xlim = [-3, 3]  # in µm
     manual_ylim = [-6, 6]  # in p/mec
     
     n_sigma_x = 3.5
@@ -589,7 +597,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
     # Colorbar limits
     cbar_vmin = 0
 
-    h1 = ax1.hist2d(x_microns, ux, bins=250, range=[xlims_x, ylims_x], weights=w*1e-4, cmap='turbo', vmin=cbar_vmin, vmax=25)
+    h1 = ax1.hist2d(x_microns, ux, bins=250, range=[xlims_x, ylims_x], weights=w, cmap='turbo', vmin=cbar_vmin)
     ax1.set_xlabel(r'$x \; (\mu m)$')
     ax1.set_ylabel(r'$p_x / m_e c$')
     ax1.set_title(f'X Phase Space')
@@ -617,7 +625,7 @@ def plot_dopant_emittance(a0_target, dopant_species):
         xlims_y = [mean_y_um - n_sigma_y*rms_y_um, mean_y_um + n_sigma_y*rms_y_um]
         ylims_y = [avg_uy - n_sigma_y*rms_uy, avg_uy + n_sigma_y*rms_uy]
     
-    h2 = ax2.hist2d(y_microns, uy, bins=250, range=[xlims_y, ylims_y], weights=w*1e-4, cmap='turbo', vmin=cbar_vmin, vmax=75)
+    h2 = ax2.hist2d(y_microns, uy, bins=250, range=[xlims_y, ylims_y], weights=w, cmap='turbo', vmin=cbar_vmin)
     ax2.set_xlabel(r'$y \; [\mu m]$')
     ax2.set_ylabel(r'$p_y / m_e c$')
     ax2.set_title(f'Y Phase Space')
@@ -631,9 +639,31 @@ def plot_dopant_emittance(a0_target, dopant_species):
         ax2.set_ylim(ylims_y)
     plt.colorbar(h2[3], ax=ax2, label='Charge Density (arb.)')
 
-    plt.suptitle(f"Transverse Phase Space ({dopant_species}-doped)", fontsize=14)
+    # Plot Longitudinal Phase Space (Z vs pz)
+    z_microns = z * 1e6
+    avg_z = np.average(z, weights=w)
+    avg_uz = np.average(uz, weights=w)
+    rms_z = np.sqrt(np.average((z - avg_z)**2, weights=w))
+    rms_uz = np.sqrt(np.average((uz - avg_uz)**2, weights=w))
+    
+    mean_z_um = avg_z * 1e6
+    rms_z_um = rms_z * 1e6
+    
+    n_sigma_z = 3.5
+    xlims_z = [mean_z_um - n_sigma_z*rms_z_um, mean_z_um + n_sigma_z*rms_z_um]
+    ylims_z = [avg_uz - n_sigma_z*rms_uz, avg_uz + n_sigma_z*rms_uz]
+    
+    h3 = ax3.hist2d(z_microns, uz, bins=250, range=[xlims_z, ylims_z], weights=w, cmap='turbo', vmin=cbar_vmin)
+    ax3.set_xlabel(r'$z \; (\mu m)$')
+    ax3.set_ylabel(r'$p_z / m_e c$')
+    ax3.set_title(f'Longitudinal Phase Space')
+    ax3.set_xlim(xlims_z)
+    ax3.set_ylim(ylims_z)
+    plt.colorbar(h3[3], ax=ax3, label='Charge Density (arb.)')
+
+    plt.suptitle(f"Phase Space ({dopant_species}-doped)", fontsize=14)
     plt.tight_layout()
-    filename = f'{dopant_species}_transverse_phase_space.png'
+    filename = f'{dopant_species}_phase_space_histogram.png'
     plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
@@ -756,7 +786,6 @@ def analyse_injection_density_distribution(a0_target, dopant_species):
     print(f"Saved distribution plot: {filename}")
     plt.close()
 
-
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
@@ -767,16 +796,14 @@ if __name__ == "__main__":
     # plot_dopant_comparison()
     
     # plot_phase_space(a0, dopant_species='Ar')
-    # plot_e_injected(a0, 'Ne')
+    # plot_e_injected(a0, 'Ar')
     
     # Analyse density distribution to help set vmin/vmax
     # analyse_injection_density_distribution(a0, 'Ar')
     
-    plot_e_density(a0, 'N')
-    # plot_laser_envelope()
-    # plot_dopant_emittance(a0, 'Ar')
-    
-
+    # plot_e_density(a0, 'N')
+    # # plot_laser_envelope()
+    plot_dopant_emittance_histogram(a0, 'Ar')
     # plot_energy_spectra_comparison(a0)
 
     # Run detailed plots for each dopant at fixed a0
