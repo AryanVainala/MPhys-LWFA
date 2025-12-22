@@ -170,9 +170,13 @@ Lr = rmax
 dz_target = lambda0 / 30
 Nz = int(np.ceil(Lz / dz_target))
 
+print(dz_target, Nz)
+
 # Radial resolution: no points per plasma skin depth
 dr_target = skin_depth / 30
 Nr = int(np.ceil(Lr / dr_target))
+
+print(dr_target, Nr)
 
 # Number of azimuthal modes
 Nm = 2

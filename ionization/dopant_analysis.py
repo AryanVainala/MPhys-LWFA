@@ -9,6 +9,7 @@ injection thresholds, and wakefield nonlinearity.
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import cmcrameri.cm as cmc
 import matplotlib.colors as mcolors
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 from openpmd_viewer import OpenPMDTimeSeries
@@ -19,13 +20,17 @@ import sys
 
 # Set publication-quality plot parameters
 plt.rcParams.update({
-    'font.size': 11,
-    'axes.labelsize': 12,
-    'axes.titlesize': 13,
+    'font.family': "Helvetica",
+    'font.size': 12,
+    'axes.labelsize': 15,
+    'axes.titlesize': 18,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
     'lines.linewidth': 2,
     'axes.grid': True,
     'grid.alpha': 0.3
 })
+
 
 # ==========================================
 # CONFIGURATION
@@ -33,13 +38,17 @@ plt.rcParams.update({
 
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ar']  # List of dopants to compare
+dopant_list = ['N', 'Ar', 'Ne']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
 n_e_target = 3.5e24
 omega_p = np.sqrt(n_e_target * e**2 / (m_e * epsilon_0))
 E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx formula
+
+# Energy threshold for injected electrons
+E_threshold_MeV = 50.0
+gamma_threshold = 1 + (E_threshold_MeV * 1e6 * e) / (m_e * c**2)
 
 # ==========================================
 # DATA LOADING
@@ -260,7 +269,7 @@ def plot_e_density(a0_target, dopant_species):
                        extent=extent_rho,
                        origin='lower',
                        aspect='auto',
-                       cmap='binary',
+                       cmap=cmc.grayC_r,
                        interpolation='bilinear',
                        vmin = np.percentile(n_bulk, 0),
                        vmax = np.percentile(n_bulk, 99.95)
@@ -346,8 +355,107 @@ def plot_e_density(a0_target, dopant_species):
     print(f"Saved: {filename}")
     plt.close()
 
+def plot_e_density_pure_he(a0_target):
+    print(f"\nGenerating Plot: Pure Helium Wakefield (a0={a0_target})...")
+    
+    # Load Data
+    ts = load_data(a0_target, None, 'pure_he')
+    if ts is None:
+        return
+
+    iteration = ts.iterations[-1]
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)]
+
+    # --- 1. GET BULK PLASMA DENSITY ---
+    # In pure_he mode, we use rho_electrons_bulk
+    rho, info_rho = ts.get_field(field='rho_electrons_bulk', iteration=iteration)
+    z_rho = info_rho.z * 1e6 # Convert to microns
+    r_rho = info_rho.r * 1e6
+    extent_rho = [z_rho.min(), z_rho.max(), r_rho.min(), r_rho.max()]
+
+    # --- 2. GET LASER ENVELOPE ---
+    laser, info_laser = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
+    z_laser = info_laser.z * 1e6
+    r_laser = info_laser.r * 1e6
+    extent_laser = [z_laser.min(), z_laser.max(), r_laser.min(), r_laser.max()]
+
+    # --- 3. GET ELECTRIC FIELD Ez ---
+    Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, m=0, slice_across='r')
+    z_Ez = info_Ez.z * 1e6
+    Ez_GV = Ez / 1e9
+
+    # --- PLOTTING ---
+    fig = plt.figure(figsize=(12, 6))
+    
+    # Create gridspec: main plot on top, one colorbar at the bottom
+    gs = fig.add_gridspec(2, 1, height_ratios=[1, 0.05], hspace=0.25)
+    
+    ax = fig.add_subplot(gs[0, 0])
+    cax_bulk = fig.add_subplot(gs[1, 0])
+
+    # Convert to relative density
+    n_bulk = -rho / e
+    
+    # Calculate n0
+    z_indices = n_bulk.shape[1]
+    sample_region = int(z_indices * 0.9) 
+    n0 = np.median(n_bulk[:, sample_region:])
+    n_bulk = n_bulk / n0
+
+    # Layer 1: Plasma Density (Bulk)
+    im_rho = ax.imshow(n_bulk,
+                       extent=extent_rho,
+                       origin='lower',
+                       aspect='auto',
+                       cmap=cmc.grayC_r,
+                       interpolation='bilinear',
+                       vmin = np.percentile(n_bulk, 0),
+                       vmax = np.percentile(n_bulk, 99.95)
+            )
+    im_rho.cmap.set_over('black')
+
+    # Horizontal colorbar for bulk density
+    cbar = plt.colorbar(im_rho, cax=cax_bulk, orientation='horizontal')
+    cbar.set_label(r'Bulk Plasma: $n_e/n_0$', fontsize=10)
+
+    # Layer 2: Laser envelope
+    cmp_laser = get_transparent_inferno(
+        n_bins=512,
+        desat_factor=0.2,
+        x0=0.2,
+        k=12.0,
+        alpha_min=0.0,
+        alpha_max=0.85)
+
+    im_laser = ax.imshow(laser,
+                         cmap=cmp_laser,
+                         interpolation='bicubic',
+                         extent=extent_laser,
+                         origin='lower',
+                         aspect='auto',
+                         vmin=0)
+
+    # --- TWIN AXIS FOR Ez ---
+    ax2 = ax.twinx()
+    ax2.plot(z_Ez, Ez_GV, color="#0606B6", linewidth=1.5, alpha=0.9, label='$E_z$')
+    ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
+    
+    ax.set_xlim(z_rho.min(), z_rho.max())
+    ax.set_xlabel(r'$z \; (\mu m)$', fontsize=12)
+    ax.set_ylabel(r'$r \; (\mu m)$', fontsize=12)
+    ax.set_title(f"Pure Helium Wakefield at (z = {c*t_fs*1e3:.2f} mm)")
+    
+    ax2.set_ylabel(r'$E_z$ (GV/m)', color='#0606B6')
+    ax2.tick_params(axis='y', labelcolor='#0606B6')
+    ax2.set_ylim(-1000, 1000)
+
+    filename = 'pure_he_wakefield.png'
+    plt.savefig(filename, dpi=800, bbox_inches='tight')
+    print(f"Saved: {filename}")
+    plt.close()
+
 def plot_e_injected(a0_target, dopant_species):
-    print(f"\nGenerating Plot : Injected Electron Density (a0={a0_target}, dopant={dopant_species})...")
+    print(f"\nGenerating Plot : Injected Electron Density (XY Histogram) (a0={a0_target}, dopant={dopant_species})...")
 
     mode = 'doped'
     label = f'{dopant_species}-Doped'
@@ -360,66 +468,74 @@ def plot_e_injected(a0_target, dopant_species):
         return
 
     # Use last iteration
-    iteration_idx = 12
+    iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
-    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+    t_fs = ts.t[ts.iterations.tolist().index(iteration)]
+    print(t_fs)
 
-    # --- GET INJECTED DENSITY ---
-    rho, info_rho = ts.get_field(field='rho_electrons_injected', iteration=iteration)
+    x, y, w = ts.get_particle(
+        var_list=['x', 'y', 'w'], 
+        species='electrons_injected', 
+        iteration=iteration, 
+        select={'uz': [uz_threshold, None]}  # Energy filter
+    )
 
-    # Convert to number density (m^-3)
-    # rho is charge density (C/m^3). Electrons have negative charge.
-    n_injected = -rho / e
+    if len(x) == 0:
+        print("No injected electrons found.")
+        return
 
-    # Get coordinates
-    z = info_rho.z * 1e6  # microns
-    r = info_rho.r * 1e6  # microns
-    extent = [z.min(), z.max(), r.min(), r.max()]
+    x_um = x * 1e6
+    y_um = y * 1e6
+    q_pC = w * e * 1e12
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # --- PLOTTING ---
+    fig, ax = plt.subplots(figsize=(6, 5))
 
-    # Plot density
-    im = ax.imshow(n_injected, extent=extent, origin='lower', aspect='auto', cmap='Greens')
+    h = ax.hist2d(x_um, y_um, bins=300, weights=q_pC, cmap='inferno', range=[[-3, 3], [-3, 3]])
+    
+    cbar = plt.colorbar(h[3], ax=ax)
+    cbar.set_label(r'Charge Density (pC/bin)')
 
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label(r'$n_{injected} \; (m^{-3})$')
-
-    ax.set_xlabel(r'$z \; (\mu m)$')
-    ax.set_ylabel(r'$r \; (\mu m)$')
-    ax.set_title(f"Injected Electron Density - {label} (t = {t_fs:.1f} fs)")
-
+    ax.set_xlabel(r'$x \; (\mu m)$')
+    ax.set_ylabel(r'$y \; (\mu m)$')
+    ax.set_title(f"Injected Beam Transverse Profile\n{label} (z = {c*t_fs*1e3:.2f} mm)")
+    
+    # Force square aspect ratio for transverse plane
+    ax.set_aspect('equal')
+    
     plt.tight_layout()
-    filename = f'{dopant_species}_injected_charge_density.png'
-    plt.savefig(filename, dpi=800, bbox_inches='tight')
+    filename = f'{dopant_species}_injected_xy_histogram.png'
+    plt.savefig(filename, dpi=300)
     print(f"Saved: {filename}")
     plt.close()
 
 def plot_energy_spectra_comparison(a0_target):
-    print(f"\nGenerating Plot : Energy Spectra Comparison (a0={a0_target})...")
+    print(f"\nGenerating Plot : Energy Spectra Comparison (Overlay) (a0={a0_target})...")
     
     # Setup figure
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    axes = axes.flatten() # Flatten to 1D array for easy indexing
+    fig, ax = plt.subplots(figsize=(10, 7))
     
     # Define plot order and parameters
     plot_configs = [
-        {'title': 'Pure Helium (Reference)', 'species': None, 'mode': 'pure_he', 'color': 'grey'},
-        {'title': 'Nitrogen (N) Doped',     'species': 'N',   'mode': 'doped',   'color': 'black'},
-        {'title': 'Argon (Ar) Doped',        'species': 'Ar',  'mode': 'doped',   'color': 'black'}
+        {'label': 'Pure Helium', 'species': None, 'mode': 'pure_he', 'color': 'grey', 'alpha': 0.3},
+        {'label': 'Nitrogen (N)', 'species': 'N',   'mode': 'doped',   'color': '#e74c3c', 'alpha': 0.4}, # Red
+        {'label': 'Argon (Ar)',   'species': 'Ar',  'mode': 'doped',   'color': '#3498db', 'alpha': 0.4}  # Blue
     ]
     
-    E_min_cutoff = 50.0 # MeV
-    bin_width = 1.0 # MeV
+    # Main plot threshold (the rigorous cutoff we calculated)
+    E_min_main = E_threshold_MeV # 50 MeV
+    bin_width_main = 1 # MeV
     
-    for i, config in enumerate(plot_configs):
-        ax = axes[i]
+    for config in plot_configs:
         species = config['species']
         mode = config['mode']
+        color = config['color']
+        label = config['label']
+        alpha = config['alpha']
         
         ts = load_data(a0_target, species, mode)
         
         if ts is None:
-            ax.text(0.5, 0.5, "Data Not Available", ha='center', va='center', transform=ax.transAxes)
             continue
             
         iteration = ts.iterations[-1]
@@ -430,68 +546,54 @@ def plot_energy_spectra_comparison(a0_target):
         else:
             species_names = ['electrons_injected', 'electrons_dopant']
             
-        uz, w = np.array([]), np.array([])
+        ux, uy, uz, w = np.array([]), np.array([]), np.array([]), np.array([])
         
         for s_name in species_names:
             try:
-                uz, w = ts.get_particle(['uz', 'w'], species=s_name, iteration=iteration)
+                ux, uy, uz, w = ts.get_particle(['ux', 'uy', 'uz', 'w'], species=s_name, iteration=iteration)
                 if len(uz) > 0:
                     break
             except:
                 continue
                 
         if len(uz) == 0:
-            ax.text(0.5, 0.5, "No Particles Found", ha='center', va='center', transform=ax.transAxes)
             continue
             
-        # Calculate Energy
-        E_MeV = (np.sqrt(uz**2 + 1) - 1) * 0.511
+        # Calculate Energy (Rigorous)
+        gamma = np.sqrt(1 + ux**2 + uy**2 + uz**2)
+        E_MeV = (gamma - 1) * (m_e * c**2 / (e * 1e6))
         
-        # Filter
-        mask = E_MeV > E_min_cutoff
-        E_selected = E_MeV[mask]
-        w_selected = w[mask]
+        # --- MAIN PLOT DATA ---
+        mask_main = E_MeV > E_min_main
+        E_main = E_MeV[mask_main]
+        w_main = w[mask_main]
         
-        if len(E_selected) == 0:
-            ax.text(0.5, 0.5, f"No Particles > {E_min_cutoff} MeV", ha='center', va='center', transform=ax.transAxes)
-            continue
+        if len(E_main) > 0:
+            E_max = np.max(E_main)
+            # Ensure at least one bin
+            if E_max <= E_min_main:
+                 bins = np.array([E_min_main, E_min_main + bin_width_main])
+            else:
+                 bins = np.arange(E_min_main, np.ceil(E_max) + bin_width_main, bin_width_main)
+            
+            hist_weights, bin_edges = np.histogram(E_main, bins=bins, weights=w_main)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            dQ_dE = (hist_weights * e * 1e12) / bin_width_main
+            
+            # Plot Main
+            ax.plot(bin_centers, dQ_dE, color=color, linewidth=3)
+            ax.fill_between(bin_centers, dQ_dE, color=color, alpha=alpha, label=label)
 
-        # Histogram
-        E_max = np.max(E_selected)
-        if E_max <= E_min_cutoff:
-             bins = np.array([E_min_cutoff, E_min_cutoff + bin_width])
-        else:
-             bins = np.arange(np.floor(np.min(E_selected)), np.ceil(E_max) + bin_width, bin_width)
-        
-        hist_weights, bin_edges = np.histogram(E_selected, bins=bins, weights=w_selected)
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-        
-        # Convert to dQ/dE [pC/MeV]
-        dQ_dE = (hist_weights * e * 1e12) / bin_width
-        
-        # Plot
-        ax.plot(bin_centers, dQ_dE, color=config['color'], linewidth=2)
-        ax.fill_between(bin_centers, dQ_dE, color=config['color'], alpha=0.1)
-        
-        # Statistics
-        total_charge = np.sum(w_selected) * e * 1e12 # pC
-        mean_energy = np.average(E_selected, weights=w_selected)
-        
-        stats_text = f"Q = {total_charge:.1f} pC\n<E> = {mean_energy:.1f} MeV"
-        ax.text(0.95, 0.95, stats_text, transform=ax.transAxes, 
-                ha='right', va='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        # Styling
-        ax.set_title(config['title'])
-        ax.set_xlabel(r"Energy (MeV)")
-        ax.set_ylabel(r"$dQ/dE$ (pC/MeV)")
-        ax.set_xlim(left=E_min_cutoff)
-        ax.set_ylim(bottom=0)
+    # Styling Main Plot
+    ax.set_xlabel(r"Energy (MeV)")
+    ax.set_ylabel(r"$dQ/dE$ (pC/MeV)")
+    ax.set_xlim(left=E_min_main)
+    ax.set_ylim(bottom=0)
+    ax.legend(loc='upper right')
+    ax.set_title(f"Injected Electron Energy Spectra (E > {E_min_main} MeV) (a0={a0_target})")
 
-    plt.suptitle(f"Injected Electron Energy Spectra (a0={a0_target})", fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    
-    filename = f'energy_spectra_comparison_a{a0_target}.png'
+    plt.tight_layout()
+    filename = f'energy_spectra_comparison_overlay_a{a0_target}.png'
     plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
@@ -518,7 +620,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
         var_list=['x', 'y', 'z', 'ux', 'uy', 'uz', 'w'], 
         species='electrons_injected', 
         iteration=iteration, 
-        select={'uz': [100, None]}  # YOUR ENERGY/MOMENTA FILTER
+        select={'uz': [uz_threshold, None]}  # ENERGY/MOMENTA FILTER
     )
 
     q = w * e * 1e12 
@@ -562,7 +664,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     emit_x, sigma_emit_x, avg_x, avg_ux, rms_x, rms_ux = calculate_emittance_axis(x, ux, w)
     emit_y, sigma_emit_y, avg_y, avg_uy, rms_y, rms_uy = calculate_emittance_axis(y, uy, w)
 
-    emit_x1, emity_y1 = ts.get_emittance(iteration, species='electrons_injected',select={'uz': [100, None]},
+    emit_x1, emity_y1 = ts.get_emittance(iteration, species='electrons_injected',select={'uz': [uz_threshold, None]},
                      kind='normalized', description='projected')
     
     print(emit_x1)
@@ -597,10 +699,9 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     # Colorbar limits
     cbar_vmin = 0
 
-    h1 = ax1.hist2d(x_microns, ux, bins=250, range=[xlims_x, ylims_x], weights=w, cmap='turbo', vmin=cbar_vmin)
+    h1 = ax1.hist2d(x_microns, ux, bins=250, range=[xlims_x, ylims_x], weights=q, cmap='turbo', vmin=cbar_vmin)
     ax1.set_xlabel(r'$x \; (\mu m)$')
     ax1.set_ylabel(r'$p_x / m_e c$')
-    ax1.set_title(f'X Phase Space')
     
     # Apply limits: manual if enabled, otherwise n_sigma based
     if use_manual_limits:
@@ -609,7 +710,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     else:
         ax1.set_xlim(xlims_x)
         ax1.set_ylim(ylims_x)
-    plt.colorbar(h1[3], ax=ax1, label='Charge Density (arb.)')
+    plt.colorbar(h1[3], ax=ax1, label='Charge per bin (pC)')
 
     n_sigma_y = 3.5
 
@@ -625,10 +726,9 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
         xlims_y = [mean_y_um - n_sigma_y*rms_y_um, mean_y_um + n_sigma_y*rms_y_um]
         ylims_y = [avg_uy - n_sigma_y*rms_uy, avg_uy + n_sigma_y*rms_uy]
     
-    h2 = ax2.hist2d(y_microns, uy, bins=250, range=[xlims_y, ylims_y], weights=w, cmap='turbo', vmin=cbar_vmin)
-    ax2.set_xlabel(r'$y \; [\mu m]$')
+    h2 = ax2.hist2d(y_microns, uy, bins=250, range=[xlims_y, ylims_y], weights=q, cmap='turbo', vmin=cbar_vmin)
+    ax2.set_xlabel(r'$y \; (\mu m)$')
     ax2.set_ylabel(r'$p_y / m_e c$')
-    ax2.set_title(f'Y Phase Space')
     
     # Apply limits: manual if enabled, otherwise n_sigma based
     if use_manual_limits:
@@ -637,7 +737,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     else:
         ax2.set_xlim(xlims_y)
         ax2.set_ylim(ylims_y)
-    plt.colorbar(h2[3], ax=ax2, label='Charge Density (arb.)')
+    plt.colorbar(h2[3], ax=ax2, label='Charge per bin (pC)')
 
     # Plot Longitudinal Phase Space (Z vs pz)
     z_microns = z * 1e6
@@ -650,21 +750,147 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     rms_z_um = rms_z * 1e6
     
     n_sigma_z = 3.5
-    xlims_z = [mean_z_um - n_sigma_z*rms_z_um, mean_z_um + n_sigma_z*rms_z_um]
-    ylims_z = [avg_uz - n_sigma_z*rms_uz, avg_uz + n_sigma_z*rms_uz]
+    # xlims_z = [mean_z_um - n_sigma_z*rms_z_um, mean_z_um + n_sigma_z*rms_z_um]
+    # ylims_z = [avg_uz - n_sigma_z*rms_uz, avg_uz + n_sigma_z*rms_uz]
+
+    xlims_z = None
+    ylims_z = None
     
-    h3 = ax3.hist2d(z_microns, uz, bins=250, range=[xlims_z, ylims_z], weights=w, cmap='turbo', vmin=cbar_vmin)
+    h3 = ax3.hist2d(z_microns, uz, bins=250, range=[xlims_z, ylims_z], weights=q, cmap='turbo', vmin=cbar_vmin)
     ax3.set_xlabel(r'$z \; (\mu m)$')
     ax3.set_ylabel(r'$p_z / m_e c$')
-    ax3.set_title(f'Longitudinal Phase Space')
     ax3.set_xlim(xlims_z)
     ax3.set_ylim(ylims_z)
-    plt.colorbar(h3[3], ax=ax3, label='Charge Density (arb.)')
+    plt.colorbar(h3[3], ax=ax3, label='Charge per bin (pC)')
 
-    plt.suptitle(f"Phase Space ({dopant_species}-doped)", fontsize=14)
+    # plt.suptitle(f"Phase Space ({dopant_species}-doped)", fontsize=14)
     plt.tight_layout()
     filename = f'{dopant_species}_phase_space_histogram.png'
     plt.savefig(filename, dpi=800)
+    print(f"Saved: {filename}")
+    plt.close()
+
+def plot_injection_dynamics(a0_target, dopant_species):
+    """
+    Plots the evolution of the laser a0 and the total injected charge 
+    as a function of propagation distance z.
+    
+    Top Panel: Peak a0 evolution (Laser breathing)
+    Bottom Panel: Total Injected Charge evolution (Injection events)
+    """
+    print(f"\nGenerating Plot: Injection Dynamics Analysis (a0={a0_target}, {dopant_species})...")
+    
+    # 1. Load Data
+    # ---------------------------------------------------
+    mode = 'doped'
+    ts = load_data(a0_target, dopant_species, mode)
+    if ts is None:
+        return
+
+    # 2. Extract Evolution Data
+    # ---------------------------------------------------
+    z_prop = []      # Propagation distance (microns)
+    a0_peak = []     # Peak a0
+    Q_inj = []       # Total injected charge (pC)
+    
+    # Constants for a0 calculation
+    # a0 = e * E / (me * c * omega)
+    # We assume lambda0 = 0.8 microns (standard) -> omega = 2*pi*c/lambda0
+    lambda0 = 0.8e-6 
+    omega0 = 2 * np.pi * c / lambda0
+    
+    print("Extracting time-series data (this may take a minute)...")
+    
+    # Iterate through all available files
+    for iteration in ts.iterations:
+        
+        # --- A. Get Propagation Distance ---
+        # Current time in simulation
+        t = ts.t[ np.where(ts.iterations == iteration)[0][0] ]
+        z_current = c * t * 1e6 # Convert to microns
+        
+        # --- B. Get Laser a0 ---
+        # We extract the maximum Electric field in the domain
+        # 'E' returns (Ez, Er) or (Ex, Ey, Ez) depending on geometry. 
+        # For a0, we usually look at the transverse field (Ex or Er).
+        try:
+            # Try to get the laser envelope first (faster/cleaner if available)
+            # Note: get_laser_envelope returns complex field, we want abs value
+            field, info = ts.get_laser_envelope(iteration=iteration)
+            E_max = np.max(np.abs(field))
+        except:
+            # Fallback: Get raw Ex field (assuming polarization in x)
+            # We take the absolute maximum of the Ex field
+            Ex, info = ts.get_field(field='E', coord='x', iteration=iteration)
+            E_max = np.max(np.abs(Ex))
+
+        # Calculate a0
+        current_a0 = (e * E_max) / (m_e * c * omega0)
+        
+        # --- C. Get Injected Charge ---
+        # Sum the weights of the injected species
+        try:
+            w = ts.get_particle(['w'], species='electrons_injected', iteration=iteration)[0]
+            total_charge_pC = np.sum(w) * e * 1e12 # Convert to pC
+        except:
+            total_charge_pC = 0.0
+
+        # Append to lists
+        z_prop.append(z_current)
+        a0_peak.append(current_a0)
+        Q_inj.append(total_charge_pC)
+
+    # Convert to arrays for easier plotting
+    z_prop = np.array(z_prop)
+    a0_peak = np.array(a0_peak)
+    Q_inj = np.array(Q_inj)
+    
+    # Calculate derivative of charge (Injection Rate) - Optional but useful
+    # dQ/dz
+    dQ_dz = np.gradient(Q_inj, z_prop)
+
+    # 3. Plotting
+    # ---------------------------------------------------
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 8))
+    plt.subplots_adjust(hspace=0.1) # Reduce gap between plots
+
+    # --- Top Panel: a0 Evolution ---
+    ax1.plot(z_prop, a0_peak, color='black', linestyle='--', linewidth=2, label=r'$a_0$')
+    
+    # Styling (a)
+    ax1.set_ylabel(r'$a_0$')
+    ax1.set_ylim(bottom=0, top=max(a0_peak)*1.2)
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='upper right')
+    ax1.set_title(f"Injection Dynamics ({dopant_species}-doped)")
+
+    # --- Bottom Panel: Injected Charge ---
+    # We plot the total charge accumulation
+    ax2.plot(z_prop, Q_inj, color='white', linewidth=2, label=r'$Q_{inj}$ (Total)')
+    
+    # Fill the area under the curve for better visibility (like a density plot)
+    ax2.fill_between(z_prop, Q_inj, color='white', alpha=0.1)
+    
+    # Create a background heatmap style for contrast (mimicking the reference style)
+    ax2.set_facecolor('black')
+    
+    # Overlay the "Injection Rate" (dQ/dz) to clearly see the "events"
+    # We scale it to fit on the right axis or just normalize it to fit the plot
+    # Here we just normalize it to the max charge for visualization
+    if np.max(dQ_dz) > 0:
+        scale_factor = np.max(Q_inj) / np.max(dQ_dz)
+        ax2.plot(z_prop, dQ_dz * scale_factor, color='cyan', alpha=0.6, linewidth=1, label='Injection Rate (dQ/dz)')
+
+    # Styling (c)
+    ax2.set_ylabel(r'$Q_{inj}$ (pC)')
+    ax2.set_xlabel(r'Propagation Distance $z$ ($\mu m$)')
+    ax2.set_ylim(bottom=0)
+    ax2.grid(True, alpha=0.2, color='gray')
+    ax2.legend(loc='upper left')
+
+    # Save
+    filename = f'{dopant_species}_injection_dynamics.png'
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
     print(f"Saved: {filename}")
     plt.close()
 
@@ -795,16 +1021,18 @@ if __name__ == "__main__":
     # Run Charge Comparison
     # plot_dopant_comparison()
     
-    # plot_phase_space(a0, dopant_species='Ar')
     # plot_e_injected(a0, 'Ar')
     
     # Analyse density distribution to help set vmin/vmax
     # analyse_injection_density_distribution(a0, 'Ar')
     
     # plot_e_density(a0, 'N')
-    # # plot_laser_envelope()
-    plot_dopant_emittance_histogram(a0, 'Ar')
-    # plot_energy_spectra_comparison(a0)
+    # plot_injection_dynamics(a0,'Ar')
+    # plot_dopant_emittance_histogram(a0, 'N')
+    plot_energy_spectra_comparison(a0)
+    
+    # Plot Pure He Wakefield
+    # plot_e_density_pure_he(a0)
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
