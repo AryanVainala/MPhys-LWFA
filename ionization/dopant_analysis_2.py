@@ -200,3 +200,107 @@ plt.title("Beam Loading Evidence: Current Profile vs Wakefield")
 plt.tight_layout()
 plt.savefig("beam_loading.png")
 print("Saved: beam_loading.png")
+# ===========================
+# PLOT 3: SPECTRAL DENSITY COMPARISON
+# ===========================
+def plot_spectral_density_comparison(cases, a0_target):
+    print(f"\nGenerating Plot: Spectral Density Comparison (a0={a0_target})...")
+    
+    n_cases = len(cases)
+    fig = plt.figure(figsize=(10, 3 * n_cases))
+    
+    # Create GridSpec: n_cases rows, 2 columns (Main plot, Side plot)
+    # Width ratios: Main plot is wider (e.g., 4:1)
+    gs = gridspec.GridSpec(n_cases, 2, width_ratios=[4, 1], wspace=0.05, hspace=0.2)
+    
+    E_min = 50
+    E_max = 600 # Adjust based on data
+    theta_max = 15 # mrad
+    
+    for i, case in enumerate(cases):
+        # Load Data
+        path = f"{base_dir}/a{a0_target}_{case['mode']}"
+        if case['species']: path += f"_{case['species']}"
+        path += "/hdf5"
+        
+        try:
+            ts = OpenPMDTimeSeries(path)
+            it = ts.iterations[-1]
+            beam = get_beam_data(ts, it, case['mode'])
+        except Exception as e:
+            print(f"Skipping {case['label']}: {e}")
+            continue
+            
+        if beam is None or len(beam['x']) < 10:
+            continue
+            
+        # Data Processing
+        E_MeV = beam['E_MeV']
+        w = beam['w']
+        ux = beam['ux']
+        uz = beam['uz']
+        theta_x_mrad = np.arctan2(ux, uz) * 1e3
+        
+        # Filter for plot limits
+        mask = (E_MeV > E_min) & (E_MeV < E_max) & (np.abs(theta_x_mrad) < theta_max)
+        E_plot = E_MeV[mask]
+        theta_plot = theta_x_mrad[mask]
+        w_plot = w[mask]
+        
+        if len(E_plot) == 0: continue
+
+        # --- Main Panel (2D Hist + dQ/dE) ---
+        ax_main = fig.add_subplot(gs[i, 0])
+        
+        # 2D Histogram
+        h, xedges, yedges, image = ax_main.hist2d(
+            E_plot, theta_plot, weights=w_plot * e * 1e12, # pC
+            bins=[100, 100], range=[[E_min, E_max], [-theta_max, theta_max]],
+            cmap='inferno', density=False
+        )
+        
+        # dQ/dE (White Line)
+        # Calculate 1D histogram
+        hist_E, bin_edges_E = np.histogram(E_plot, bins=100, range=(E_min, E_max), weights=w_plot * e * 1e12)
+        bin_centers_E = 0.5 * (bin_edges_E[:-1] + bin_edges_E[1:])
+        dQ_dE = hist_E / (bin_edges_E[1] - bin_edges_E[0])
+        
+        # Overlay dQ/dE using twin axis
+        ax_twin = ax_main.twinx()
+        ax_twin.plot(bin_centers_E, dQ_dE, color='white', lw=1.5, alpha=0.9)
+        ax_twin.set_ylim(0, np.max(dQ_dE) * 1.2)
+        ax_twin.axis('off') # Hide axis to mimic overlay
+        
+        ax_main.set_ylabel(r'$\theta_x$ (mrad)')
+        if i == n_cases - 1:
+            ax_main.set_xlabel('Energy (MeV)')
+        else:
+            ax_main.set_xticklabels([])
+            
+        ax_main.text(0.02, 0.9, f"{case['label']}", transform=ax_main.transAxes, color='white', fontweight='bold')
+
+        # --- Side Panel (dQ/dtheta) ---
+        ax_side = fig.add_subplot(gs[i, 1], sharey=ax_main)
+        
+        # dQ/dtheta
+        hist_theta, bin_edges_theta = np.histogram(theta_plot, bins=100, range=(-theta_max, theta_max), weights=w_plot * e * 1e12)
+        bin_centers_theta = 0.5 * (bin_edges_theta[:-1] + bin_edges_theta[1:])
+        dQ_dtheta = hist_theta / (bin_edges_theta[1] - bin_edges_theta[0])
+        
+        # Plot
+        ax_side.plot(dQ_dtheta, bin_centers_theta, color='lightgreen', lw=1.5)
+        ax_side.fill_betweenx(bin_centers_theta, 0, dQ_dtheta, color='lightgreen', alpha=0.3)
+        
+        # Styling
+        ax_side.set_xlabel(r'$dQ/d\theta_x$')
+        ax_side.tick_params(axis='y', labelleft=False) # Hide y labels as they are shared
+        ax_side.grid(True, alpha=0.2)
+        
+        # Highlight +/- 3 mrad range (as in caption)
+        ax_side.axhspan(-3, 3, color='gray', alpha=0.2)
+
+    plt.savefig("spectral_density_comparison.png", dpi=300)
+    print("Saved: spectral_density_comparison.png")
+
+# Run the new plot
+plot_spectral_density_comparison(cases, a0)

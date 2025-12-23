@@ -576,6 +576,7 @@ def plot_energy_divergence_comparison(a0_target):
     
     # Main plot threshold
     E_min_main = E_threshold_MeV 
+    E_max_fixed = 400 # Fixed maximum energy for alignment
     theta_lim = 20 # mrad
     theta_int_lim = 5.0 # mrad for dQ/dE integration
     
@@ -587,11 +588,24 @@ def plot_energy_divergence_comparison(a0_target):
         mode = config['mode']
         label = config['label']
         
+        # Apply styling to all axes regardless of data
+        ax.set_ylabel(r'$\theta_x$ (mrad)')
+        ax.yaxis.tick_right()
+        ax.yaxis.set_label_position("right")
+        ax.tick_params(axis='y', colors='black', labelsize=12, length=6, width=1.5)
+        ax.set_ylim(-theta_lim, theta_lim)
+        ax.text(0.02, 0.9, label, transform=ax.transAxes, color='white', fontsize=12, fontweight='bold')
+        
+        # Remove x-ticks for top plots
+        if i < 2:
+            ax.set_xticklabels([])
+
         ts = load_data(a0_target, species, mode)
         
         if ts is None:
             ax.text(0.5, 0.5, "Data Not Available", transform=ax.transAxes, ha='center', color='white')
             ax.set_facecolor('black')
+            ax.set_xlim(E_min_main, E_max_fixed)
             continue
             
         iteration = ts.iterations[-1]
@@ -615,6 +629,7 @@ def plot_energy_divergence_comparison(a0_target):
         if len(uz) == 0:
             ax.text(0.5, 0.5, "No Particles Found", transform=ax.transAxes, ha='center', color='white')
             ax.set_facecolor('black')
+            ax.set_xlim(E_min_main, E_max_fixed) # Ensure alignment even if empty
             continue
             
         # Calculate Energy and Divergence
@@ -629,11 +644,14 @@ def plot_energy_divergence_comparison(a0_target):
         w_sel = w[mask]
         
         if len(E_sel) == 0:
+            ax.text(0.5, 0.5, "No Particles > Threshold", transform=ax.transAxes, ha='center', color='white')
             ax.set_facecolor('black')
+            ax.set_xlim(E_min_main, E_max_fixed) # Ensure alignment even if empty
             continue
 
         # Binning
-        bins_E = np.linspace(E_min_main, np.max(E_sel), 200)
+        # Changed np.max(E_sel) to E_max_fixed to ensure identical bin width and alignment across all plots
+        bins_E = np.linspace(E_min_main, E_max_fixed, 200)
         bins_theta = np.linspace(-theta_lim, theta_lim, 100)
         
         # 2D Histogram (Density)
@@ -649,8 +667,11 @@ def plot_energy_divergence_comparison(a0_target):
                        extent=[bins_E[0], bins_E[-1], bins_theta[0], bins_theta[-1]],
                        cmap='magma', vmin=0)
         
+        # Set fixed x-limits for alignment
+        ax.set_xlim(E_min_main, E_max_fixed)
+        
         # Add grey box for integration limits
-        ax.axhspan(-theta_int_lim, theta_int_lim, color='grey', alpha=0.9, zorder=0)
+        ax.axhspan(-theta_int_lim, theta_int_lim, color='grey', alpha=0.3, zorder=0)
         
         # 1D Projections
         centers_Theta = (bins_theta[:-1] + bins_theta[1:]) / 2
@@ -660,7 +681,7 @@ def plot_energy_divergence_comparison(a0_target):
         mask_theta = (centers_Theta >= -theta_int_lim) & (centers_Theta <= theta_int_lim)
         dQ_dE = np.sum(H[:, mask_theta], axis=1) * e * 1e12 / dE  # Sum over theta bins, result is pC/MeV
         
-        # dQ/dTheta (Green Line) - Integrate d²Q/dEdθx over all Energy
+        # dQ/dTheta (Green Line) - Integrate d^2 Q/dE dTheta_x over all Energy
         dQ_dTheta = np.sum(H, axis=0) * e * 1e12 / dTheta  # Sum over energy bins, result is pC/mrad
         
         # --- LEFT AXIS: dQ/dE (White Line) ---
@@ -692,7 +713,16 @@ def plot_energy_divergence_comparison(a0_target):
         # Plot dQ/dθx as vertical profile
         div_color = '#56B4E9' # Sky Blue (Colorblind friendly)
         ax_dTheta.plot(dQ_dTheta, centers_Theta, color=div_color, linewidth=1.5, alpha=0.9)
+        
+        # Fill the entire area with sky blue first to ensure no gaps (the "base" layer)
         ax_dTheta.fill_betweenx(centers_Theta, 0, dQ_dTheta, color=div_color, alpha=0.2)
+        
+        # Overlay the integration limits in grey. 
+        # This sits on top of the sky blue, ensuring the transition is perfectly flush.
+        ax_dTheta.fill_betweenx(centers_Theta, 0, dQ_dTheta, 
+                                where=(np.abs(centers_Theta) <= theta_int_lim),
+                                color='grey', alpha=0.3, interpolate=True)
+
         max_dq_dtheta = np.max(dQ_dTheta) if np.max(dQ_dTheta) > 0 else 1
         ax_dTheta.set_xlim(0, max_dq_dtheta * 1.3)
         ax_dTheta.set_ylim(-theta_lim, theta_lim)
@@ -701,7 +731,7 @@ def plot_energy_divergence_comparison(a0_target):
         ax_dTheta.tick_params(axis='x', colors='black', labelsize=12,)
         ax_dTheta.tick_params(axis='y', labelleft=True, labelsize=12, colors='black')
         ax_dTheta.set_facecolor('black')
-        ax_dTheta.grid(False)
+        ax_dTheta.grid(True)
 
         # Styling
         ax.set_ylabel(r'$\theta_x$ (mrad)')
@@ -710,16 +740,13 @@ def plot_energy_divergence_comparison(a0_target):
         ax.tick_params(axis='y', colors='black', labelsize=12, length=6, width=1.5)
         ax.set_ylim(-theta_lim, theta_lim)
         ax.text(0.02, 0.9, label, transform=ax.transAxes, color='white', fontsize=12, fontweight='bold')
-        
-        # Remove x-ticks for top plots
-        if i < 2:
-            ax.set_xticklabels([])
-        
+
         last_im = im
 
     # Force consistent x-axis tick marks for all subplots
     for ax in axes:
-        ax.set_xticks(np.arange(100, 400, 50))
+        ax.set_xticks(np.arange(100, 401, 50)) # Extended slightly to include 400
+        ax.set_xlim(E_min_main, E_max_fixed)
     
     axes[-1].set_xlabel(r"Energy (MeV)")
     
