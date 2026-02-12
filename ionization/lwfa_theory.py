@@ -29,6 +29,11 @@ def get_critical_e_density(lambda0):
     omega_l = get_omega_l(lambda0)
     return epsilon_0*m_e*omega_l**2 / e**2
 
+def get_density_ratio(n_e, lambda0):
+    """Calculate the ratio of electron density to critical density."""
+    n_c = get_critical_e_density(lambda0)
+    return n_e / n_c
+
 def get_critical_power(lambda0, n_e):
     """Calculate critical power for relativistic self-focusing (W)."""
     omega_l = get_omega_l(lambda0)

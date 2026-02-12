@@ -38,7 +38,7 @@ plt.rcParams.update({
 
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ar']  # List of dopants to compare
+dopant_list = ['N', 'Ar', 'Ne']  # List of dopants to compare
 base_dir = './diags_doped'
 
 # Physical parameters
@@ -47,7 +47,7 @@ omega_p = np.sqrt(n_e_target * e**2 / (m_e * epsilon_0))
 E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx formula
 
 # Energy threshold for injected electrons
-E_threshold_MeV = 70.0
+E_threshold_MeV = 50
 gamma_threshold = 1 + (E_threshold_MeV * 1e6 * e) / (m_e * c**2)
 uz_threshold = np.sqrt(gamma_threshold**2 - 1)
 
@@ -363,7 +363,7 @@ def plot_e_density_pure_he(a0_target):
     if ts is None:
         return
 
-    iteration = ts.iterations[-1]
+    iteration = ts.iterations[1]
     t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
 
     # --- 1. GET BULK PLASMA DENSITY ---
@@ -458,18 +458,19 @@ def plot_e_density_pure_he(a0_target):
 def plot_energy_spectra_comparison(a0_target):
     print(f"\nGenerating Plot : Energy Spectra Comparison (Stacked) (a0={a0_target})...")
     
-    # Define plot order and parameters (excluding Ne)
+    # Define plot order and parameters
     plot_configs = [
         {'label': 'Pure He', 'species': None, 'mode': 'pure_he', 'color': (0.5, 0.5, 0.5), 'alpha': 0.4},
         {'label': 'N-doped He', 'species': 'N',   'mode': 'doped',   'color': (191/255, 44/255, 35/255), 'alpha': 0.4}, # Vermillion
+        {'label': 'Ne-doped He', 'species': 'Ne',  'mode': 'doped',   'color': (0, 158/255, 115/255), 'alpha': 0.4}, # Bluish Green
         {'label': 'Ar-doped He',   'species': 'Ar',  'mode': 'doped',   'color': (0, 114/255, 178/255), 'alpha': 0.4}  # Blue
     ]
     
-    # Setup figure: 3 rows, 1 column, sharing x-axis
-    fig, axes = plt.subplots(3, 1, figsize=(10, 14), sharex=True, gridspec_kw={'hspace': 0.1})
+    # Setup figure: 4 rows, 1 column, sharing x-axis
+    fig, axes = plt.subplots(4, 1, figsize=(10, 18), sharex=True, gridspec_kw={'hspace': 0.1})
     
-    # Main plot threshold (the rigorous cutoff we calculated)
-    E_min_main = E_threshold_MeV # 50 MeV
+    # Main plot threshold
+    E_min_main = 0 # Start from 0 MeV as requested
     bin_width_main = 1 # MeV
     
     for ax, config in zip(axes, plot_configs):
@@ -537,15 +538,17 @@ def plot_energy_spectra_comparison(a0_target):
             ax.fill_between(bin_centers, dQ_dE, color=color, alpha=alpha, label=label)
             
             # Add Statistics Text
-            stats_text = f"$Q_{{inj}}$: {total_charge_pC:.1f} pC\n$\\langle E \\rangle$: {avg_energy_MeV:.1f} MeV"
+            stats_text = f"$Q_{{tot}}$: {total_charge_pC:.1f} pC\n$\\langle E \\rangle$: {avg_energy_MeV:.1f} MeV"
             ax.text(0.98, 0.95, stats_text, transform=ax.transAxes, ha='right', va='top', 
                     fontsize=12, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
 
         # Styling per subplot
         ax.set_ylabel(r"$dQ/dE$ (pC/MeV)")
-        ax.set_ylim(0, 0.5)
+        ax.set_yscale('log')
+        ax.set_ylim(bottom=1e-4) # Set a small positive floor for log scale
         ax.legend(loc='upper left')
-        ax.grid(True, alpha=0.3)
+        ax.grid(True, which='both', alpha=0.3)
+        ax.grid(True, which='minor', alpha=0.1)
 
     # Global Styling
     axes[-1].set_xlabel(r"Energy (MeV)")
@@ -578,7 +581,7 @@ def plot_energy_divergence_comparison(a0_target):
     E_min_main = E_threshold_MeV 
     E_max_fixed = 400 # Fixed maximum energy for alignment
     theta_lim = 20 # mrad
-    theta_int_lim = 5.0 # mrad for dQ/dE integration
+    theta_int_lim = 3 # mrad for dQ/dE integration
     
     # To store the last image for colorbar
     last_im = None
@@ -777,7 +780,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     # Use last iteration
     iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
-    t_fs = ts.t[ts.iterations.tolist().index(iteration)] * 1e15
+    t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
 
     # 1. Get the raw particle arrays
     # We use a loose uz filter as a pre-filter to reduce data volume
@@ -843,8 +846,6 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     emit_x1, emity_y1 = ts.get_emittance(iteration, species='electrons_injected',select={'uz': [uz_threshold, None]},
                      kind='normalized', description='projected')
     
-    print(emit_x1)
-    print(emity_y1)
 
     # --- OUTPUT ---
     print(f"Emittance X ({dopant_species}): {emit_x*1e6:.2e} +/- {sigma_emit_x*1e6:.2e} mrad")
@@ -939,7 +940,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     ax3.set_ylim(ylims_z)
     plt.colorbar(h3[3], ax=ax3, label='Charge per bin (pC)')
 
-    # plt.suptitle(f"Phase Space ({dopant_species}-doped)", fontsize=14)
+    fig.suptitle(f"{dopant_species}-Doped Phase Space at t = {t_ps:.2f} ps", fontsize=16)
     plt.tight_layout()
     filename = f'{dopant_species}_phase_space_histogram.png'
     plt.savefig(filename, dpi=800)
@@ -960,6 +961,7 @@ def plot_pure_he_emittance_histogram(a0_target):
     # Use last iteration
     iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
+    t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
     
     # Determine particle species name to fetch
     species_names = ['electrons_bulk', 'electrons_he']
@@ -1122,6 +1124,7 @@ def plot_pure_he_emittance_histogram(a0_target):
     ax3.set_ylim(ylims_z)
     plt.colorbar(h3[3], ax=ax3, label='Charge per bin (pC)')
 
+    fig.suptitle(f"Pure Helium Phase Space at t = {t_ps:.2f} ps", fontsize=16)
     plt.tight_layout()
     filename = 'pure_he_phase_space_histogram.png'
     plt.savefig(filename, dpi=800)
@@ -1142,15 +1145,15 @@ if __name__ == "__main__":
     # Analyse density distribution to help set vmin/vmax
     # analyse_injection_density_distribution(a0, 'Ar')
     
-    # plot_e_density(a0, 'Ne')
+    # plot_e_density(a0, 'N')
     # plot_injection_dynamics(a0,'Ar')
     # plot_dopant_emittance_histogram(a0, 'N')
     # plot_pure_he_emittance_histogram(a0)
     # plot_energy_spectra_comparison(a0)
-    plot_energy_divergence_comparison(a0)
+    # plot_energy_divergence_comparison(a0)
     
     # Plot Pure He Wakefield
-    # plot_e_density_pure_he(a0)
+    plot_e_density_pure_he(a0)
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:

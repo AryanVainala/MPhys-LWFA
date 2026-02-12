@@ -43,6 +43,7 @@ lambda_p = theory.get_lambda_p(n_e)
 k_p = omega_p / c
 c_over_omega_p = theory.get_skin_depth(n_e)
 n_c = theory.get_critical_e_density(lambda0)
+n_ratio = theory.get_density_ratio(n_e, lambda0)
 
 # Critical power
 P_c = theory.get_critical_power(lambda0, n_e)
@@ -89,7 +90,8 @@ print(f"  Plasma wavenumber (kₚ):              {k_p:.4e} m⁻¹")
 print(f"  Plasma skin depth (c/ωₚ):            {c_over_omega_p*1e6:.4f} µm")
 print(f"  Frequency ratio (ωₗ/ωₚ):             {omega_l/omega_p:.4f}")
 print(f"  Critical electron density (n_c):     {n_c:.4e} m⁻³ ({n_c*1e-6:.4e} cm⁻³)")
-print(f"  Density ratio (nₑ/n_c):              {n_e/n_c:.4e}")
+print(f"  Density ratio (nₑ/n_c):              {n_ratio:.4e}")
+print(f"  Plasma status:                       {'UNDERDENSE' if n_e < n_c else 'OVERDENSE'}")
 
 print("LASER PARAMETERS:")
 print("-" * 70)
@@ -138,7 +140,8 @@ with open(output_filename, 'w') as f:
     f.write(f"  Plasma wavenumber (kₚ):              {k_p:.4e} m⁻¹\n")
     f.write(f"  Plasma skin depth (c/ωₚ):            {c_over_omega_p*1e6:.4f} µm\n")
     f.write(f"  Critical electron density (n_c):     {n_c:.4e} m^-3 ({n_c*1e-6:.4e} cm^-3)\n")
-    f.write(f"  Density ratio (n_e/n_c):             {n_e/n_c:.4e}\n")
+    f.write(f"  Density ratio (n_e/n_c):             {n_ratio:.4e}\n")
+    f.write(f"  Plasma status:                       {'UNDERDENSE' if n_e < n_c else 'OVERDENSE'}\n")
     f.write(f"  Frequency ratio (ωₗ/ωₚ):              {omega_l/omega_p:.4f}\n\n")
     
     f.write("LASER PARAMETERS:\n")

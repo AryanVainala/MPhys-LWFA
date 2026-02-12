@@ -50,7 +50,7 @@ z_foc = 20.e-6    # Focal position (m)
 
 # Plasma structure
 p_zmin = 0.e-6       # Start of plasma (m)
-ramp_length = 20.e-6  # Length of entrance ramp (m)
+ramp_length = 20.e-6  # Length of entrance ramp (m)``
 
 # Particle resolution per cell
 p_nz = 2  # Particles per cell along z
