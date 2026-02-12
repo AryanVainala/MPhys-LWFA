@@ -14,7 +14,6 @@ Enter "print(fbpic_object.__doc__)" to have access to this documentation,
 where fbpic_object is any of the objects or function of FBPIC.
 """
 
-# %%
 # -------
 # Imports
 # -------
@@ -60,10 +59,10 @@ n_e = 4.e18*1.e6 # Density (electrons.meters^-3)
 # Laser Parameters
 # ----------------
 
-a0 = 2.           # Laser amplitude
+a0 = 0.1           # Laser amplitude (Linear regime: a0 << 1)
 lambda0 = 0.8e-6 # Laser wavelength (micrometres)       
-w0 = 5.e-6       # Laser waist
-tau = 16.e-15    # Laser duration
+w0 = 10.e-6       # Laser waist (Large enough to avoid blowout)
+tau = 50.e-15    # Laser duration (Resonant: c*tau ~ lambda_p/2)
 z0 = 15.e-6      # Laser centroid
 
 # Frequencies, wave numbers, wavelengths
@@ -75,7 +74,8 @@ gamma_p = omega_l / omega_p                                               # Lore
 
 ## Blowout condition waist ##
 
-w0 = (2 / kp) * (a0 / (1 + a0**2)**0.25)
+w0 = (2 / kp) * (a0 / (1 + a0**2)**0.25) 
+print(w0)
 
 # Calc. other laser quantities
 L = c*tau                                   # Pulse Length
@@ -101,7 +101,7 @@ Lpd_bub = (lambda_p**3 / lambda0**2) * a0 * np.sqrt(2)/np.pi  # [m]  blowout sca
 # ---------------------
 zmax = 30.e-6    # Right end of the simulation box (meters)
 zmin = -10.e-6   # Left end of the simulation box (meters)
-rmax = 20.e-6    # Length of the box along r (meters)
+rmax = 30.e-6    # Length of the box along r (meters)
 Lz = zmax - zmin
 Lr = rmax
 
@@ -167,7 +167,6 @@ def dephasing_length_calc(a0, lambda_p, lambda0, Np):
     elif a0 > 1:
         return (lambda_p**3 / (2 * lambda0**2)) * a0 * (np.sqrt(2)/np.pi) / Np
 
-# %%
 
 
 dephasing_length = dephasing_length_calc(a0, lambda_p, lambda0, Np = 1)
@@ -282,7 +281,6 @@ if __name__ == '__main__':
     sim.step( N_step )
     print('')
     
-# %%
 # data = lpa('./diags/hdf5/') #Load data as a variable
 
 # z_prop = data.t*c/ZR  #Calculate z position of diagnostic  (micrometerss)
@@ -308,5 +306,3 @@ if __name__ == '__main__':
 # plt.legend()
 # plt.tight_layout()
 # plt.show()
-
-# %%
