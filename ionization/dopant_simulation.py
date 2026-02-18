@@ -13,7 +13,6 @@ python dopant_type_simulation.py
 # Imports
 # -------
 import numpy as np
-import math
 import os
 from scipy.constants import c, e, m_e, m_p, epsilon_0, pi
 from fbpic.main import Simulation
@@ -33,7 +32,7 @@ use_cuda = True
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
-n_e_target = 3.5e18*1.e6  # electrons/m³
+n_e_target = 3.5e17*1.e6  # electrons/m³
 
 # Simulation configuration
 mode = 'doped'  # 'pure_he' or 'doped'
@@ -68,7 +67,7 @@ use_restart = False
 track_electrons = False # I TURNED IT OFF
 
 # Simulation length
-L_interact = 1500.e-6  # Interaction length (m)
+L_interact = 80.e-6  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION

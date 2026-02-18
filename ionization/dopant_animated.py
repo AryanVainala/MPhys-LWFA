@@ -14,7 +14,6 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from openpmd_viewer.addons import LpaDiagnostics
 from scipy.constants import c, e, m_e, epsilon_0, pi
 import os
-import sys
 
 # Set publication-quality plot parameters
 plt.rcParams.update({
@@ -32,7 +31,7 @@ plt.rcParams.update({
 # ==========================================
 # CONFIGURATION
 # ==========================================
-base_dir = './diags_doped'
+base_dir = './diags_n2.5'
 
 # ==========================================
 # DATA LOADING

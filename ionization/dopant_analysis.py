@@ -39,10 +39,10 @@ plt.rcParams.update({
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
 dopant_list = ['N', 'Ar', 'Ne']  # List of dopants to compare
-base_dir = './diags_doped'
+base_dir = './diags_n2.5/'
 
 # Physical parameters
-n_e_target = 3.5e24
+n_e_target = 2.5e23
 omega_p = np.sqrt(n_e_target * e**2 / (m_e * epsilon_0))
 E_wb = 96 * np.sqrt(n_e_target / 1e6) # Cold wavebreaking limit (V/m) approx formula
 
@@ -123,62 +123,6 @@ def get_transparent_inferno(
 # ==========================================
 # PLOTS
 # ==========================================
-
-def plot_phase_space(a0_target, dopant_species):
-    print(f"\nGenerating Plot : Phase Space Separation ({dopant_species}-doped)...")
-    
-    ts = load_data(a0_target, dopant_species, 'doped')
-    if ts is None:
-        return
-
-    iteration = ts.iterations[-1] # Change interation if needed
-    
-    # Get data for both species
-    # electrons from helium and preionised dopant -> 'electrons_bulk'
-    # outer shell electrons from  -> 'electrons_injected'
-    
-    try:
-        z_bulk, uz_bulk, w_bulk = ts.get_particle(['z', 'uz', 'w'], species='electrons_bulk', iteration=iteration)
-    except:
-        print("Warning: 'electrons_bulk' not found, trying 'electrons_he' (legacy)")
-        z_bulk, uz_bulk, w_bulk = ts.get_particle(['z', 'uz', 'w'], species='electrons_he', iteration=iteration)
-
-    try:
-        z_injected, uz_injected, w_injected = ts.get_particle(['z', 'uz', 'w'], species='electrons_injected', iteration=iteration)
-    except:
-        # Fallback or empty if no injection
-        print("Warning: 'electrons_injected' not found, trying 'electrons_dopant' (legacy)")
-        try:
-            z_injected, uz_injected, w_injected = ts.get_particle(['z', 'uz', 'w'], species='electrons_dopant', iteration=iteration)
-        except:
-             z_injected, uz_injected, w_injected = np.array([]), np.array([]), np.array([])
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Plot Dopant electrons (Injected) - Plot FIRST (Background layer)
-    if len(z_injected) > 0:
-        ax.scatter(z_injected*1e6, uz_injected, 
-                   s=5, color='red', alpha=0.3, label=f'{dopant_species} Electrons (Injected)', zorder=2)
-    else:
-        ax.text(0.5, 0.5, f"No {dopant_species} Electrons Injected", 
-                transform=ax.transAxes, ha='center', color='red')
-
-    # Plot Helium electrons (Bulk) - Plot SECOND (Foreground layer)
-    if len(z_bulk) > 0:
-        indices_bulk = np.random.choice(len(z_bulk), size=min(10000, len(z_bulk)), replace=False)
-        ax.scatter(z_bulk[indices_bulk]*1e6, uz_bulk[indices_bulk], 
-                   s=5, color='blue', alpha=0.5, label='Bulk Electrons', zorder=1)
-    
-    ax.set_xlabel('z (µm)')
-    ax.set_ylabel('$p_z / m_e c$')
-    ax.set_title(f'Phase Space Separation ({dopant_species}-doped)')
-    ax.legend()
-
-    filename = f'{dopant_species}_phase_space.png'
-    plt.tight_layout()
-    plt.savefig(filename, dpi=800)
-    print(f"Saved: {filename}")
-    plt.close()
 
 def plot_e_density(a0_target, dopant_species):
     """
@@ -470,7 +414,7 @@ def plot_energy_spectra_comparison(a0_target):
     fig, axes = plt.subplots(4, 1, figsize=(10, 18), sharex=True, gridspec_kw={'hspace': 0.1})
     
     # Main plot threshold
-    E_min_main = 0 # Start from 0 MeV as requested
+    E_min_main = 50 # Start from 0 MeV as requested
     bin_width_main = 1 # MeV
     
     for ax, config in zip(axes, plot_configs):
@@ -544,8 +488,8 @@ def plot_energy_spectra_comparison(a0_target):
 
         # Styling per subplot
         ax.set_ylabel(r"$dQ/dE$ (pC/MeV)")
-        ax.set_yscale('log')
-        ax.set_ylim(bottom=1e-4) # Set a small positive floor for log scale
+        # # ax.set_yscale('log')
+        # ax.set_ylim(bottom=1e-4) # Set a small positive floor for log scale
         ax.legend(loc='upper left')
         ax.grid(True, which='both', alpha=0.3)
         ax.grid(True, which='minor', alpha=0.1)
@@ -778,7 +722,7 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
         return
 
     # Use last iteration
-    iteration_idx = -1
+    iteration_idx = 180
     iteration = ts.iterations[iteration_idx]
     t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
 
@@ -946,6 +890,83 @@ def plot_dopant_emittance_histogram(a0_target, dopant_species):
     plt.savefig(filename, dpi=800)
     print(f"Saved: {filename}")
     plt.close()
+
+def plot_xy(a0_target, dopant_species):
+    print(f"\nGenerating Plot : Injected Electron X-Y comparison (a0={a0_target}, dopant={dopant_species})...")
+    mode = 'doped'
+    label = f'{dopant_species}-Doped'
+
+    # Load Data
+    ts = load_data(a0_target, dopant_species, mode)
+
+    if ts is None:
+        print("Data Not Available")
+        return
+
+    # Use last iteration
+    iteration_idx = -1
+    iteration = ts.iterations[iteration_idx]
+    t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
+
+    # 1. Get the raw particle arrays
+    x, y, z, ux, uy, uz, w = ts.get_particle(
+        var_list=['x', 'y', 'z', 'ux', 'uy', 'uz', 'w'], 
+        species='electrons_injected', 
+        iteration=iteration, 
+        select={'uz': [uz_threshold * 0.9, None]} 
+    )
+
+    if len(x) == 0:
+        print("No particles found.")
+        return
+
+    # Rigorous Energy Calculation and Filtering
+    gamma = np.sqrt(1 + ux**2 + uy**2 + uz**2)
+    E_MeV = (gamma - 1) * (m_e * c**2 / (e * 1e6))
+    mask = E_MeV > E_threshold_MeV
+    
+    x, y, z, ux, uy, uz, w = x[mask], y[mask], z[mask], ux[mask], uy[mask], uz[mask], w[mask]
+    
+    if len(x) == 0:
+        print(f"No particles found above {E_threshold_MeV} MeV.")
+        return
+
+    q = w * e * 1e12 
+
+    # --- PLOTTING ---
+    fig, ax = plt.subplots(figsize=(10, 10))
+    
+    # Manual limits
+    use_manual_limits = True
+    manual_lim = [-1, 1]  # in µm
+    
+    # Convert to microns
+    x_microns = x * 1e6
+    y_microns = y * 1e6
+    
+    if use_manual_limits:
+        lims = manual_lim
+    else:
+        lim_range = 3.5 * np.std(x_microns)
+        lims = [-lim_range, lim_range]
+    
+    # Plot 2D histogram
+    h = ax.hist2d(x_microns, y_microns, bins=250, range=[lims, lims], 
+                   weights=q, cmap='turbo', vmin=0)
+    ax.set_xlabel(r'$x \; (\mu m)$', fontsize=15)
+    ax.set_ylabel(r'$y \; (\mu m)$', fontsize=15)
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    
+    cbar = plt.colorbar(h[3], ax=ax, label='Charge per bin (pC)')
+    
+    fig.suptitle(f"{dopant_species}-Doped Electron X-Y Distribution at t = {t_ps:.2f} ps", fontsize=16)
+    plt.tight_layout()
+    filename = f'{dopant_species}_xy_histogram.png'
+    plt.savefig(filename, dpi=800)
+    print(f"Saved: {filename}")
+    plt.close()
+
 
 def plot_pure_he_emittance_histogram(a0_target):
     print(f"\nGenerating Plot : Pure Helium Electron Emittance (a0={a0_target})...")
@@ -1136,29 +1157,16 @@ def plot_pure_he_emittance_histogram(a0_target):
 # ==========================================
 
 if __name__ == "__main__":
-
-    # Run Charge Comparison
-    # plot_dopant_comparison()
-    
-    # plot_e_injected(a0, 'Ar')
-    
-    # Analyse density distribution to help set vmin/vmax
-    # analyse_injection_density_distribution(a0, 'Ar')
-    
-    # plot_e_density(a0, 'N')
-    # plot_injection_dynamics(a0,'Ar')
-    # plot_dopant_emittance_histogram(a0, 'N')
-    # plot_pure_he_emittance_histogram(a0)
-    # plot_energy_spectra_comparison(a0)
     # plot_energy_divergence_comparison(a0)
-    
-    # Plot Pure He Wakefield
-    plot_e_density_pure_he(a0)
+    # plot_energy_spectra_comparison(a0)
+
+    # plot_e_density(a0, 'Ar')
+    plot_dopant_emittance_histogram(a0_target=a0, dopant_species='Ar')
+    # plot_xy(a0, 'Ar')
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
         # plot_dopant_emittance_histogram(a0_target=a0, dopant_species=species)
-        # plot_phase_space(a0_target=a0, dopant_species=species)
         # plot_e_density(a0_target=a0, dopant_species=species)
         pass
     

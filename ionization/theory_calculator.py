@@ -28,7 +28,7 @@ tau = 16.e-15      # Laser duration (s)
 
 # Target electron density (after full ionization)
 # This is the controlled variable across all three gas simulations
-n_e = 3.5e24       # electrons/m³
+n_e = 2.5e23       # electrons/m3
 
 # =====================================
 # THEORETICAL CALCULATIONS
