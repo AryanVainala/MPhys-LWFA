@@ -16,6 +16,10 @@ def get_lambda_p(n_e):
     """Calculate plasma wavelength (m)."""
     return 2 * pi * c / get_omega_p(n_e)
 
+def get_k_p(n_e):
+    """Calculate plasma wave number"""
+    return get_omega_p(n_e) / c
+
 def get_skin_depth(n_e):
     """Calculate plasma skin depth (m)."""
     return c / get_omega_p(n_e)
@@ -58,7 +62,7 @@ def get_intensity_from_a0(a0, lambda0):
     # I_0[10^18 W/cm^2] = (a0 / (0.85 * lambda0[um]))^2
     I_0_normalized = (a0 / (0.85 * lambda0_um))**2 
     I_0_cgs = I_0_normalized * 1e18 # W/cm^2
-    return I_0_cgs * 1e4 # Convert to W/m^2
+    return I_0_cgs
 
 def get_laser_power(a0, lambda0, w0):
     """Calculate total laser power (W) for a Gaussian pulse."""
@@ -68,6 +72,10 @@ def get_laser_power(a0, lambda0, w0):
 def get_rayleigh_length(w0, lambda0):
     """Calculate Rayleigh length (m)."""
     return pi * w0**2 / lambda0
+
+def get_matched_spot_size(n_e, a0):
+    k_p = get_k_p(n_e)
+    return 2*np.sqrt(a0)/ k_p
 
 def get_guiding_channel_params(n_e, w0):
     """

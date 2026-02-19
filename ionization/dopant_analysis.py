@@ -38,8 +38,8 @@ plt.rcParams.update({
 
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
-dopant_list = ['N', 'Ar', 'Ne']  # List of dopants to compare
-base_dir = './diags_n2.5/'
+dopant_list = ['N', 'Ar']  # List of dopants to compare
+base_dir = './diags_n2.5e+23'
 
 # Physical parameters
 n_e_target = 2.5e23
@@ -406,7 +406,7 @@ def plot_energy_spectra_comparison(a0_target):
     plot_configs = [
         {'label': 'Pure He', 'species': None, 'mode': 'pure_he', 'color': (0.5, 0.5, 0.5), 'alpha': 0.4},
         {'label': 'N-doped He', 'species': 'N',   'mode': 'doped',   'color': (191/255, 44/255, 35/255), 'alpha': 0.4}, # Vermillion
-        {'label': 'Ne-doped He', 'species': 'Ne',  'mode': 'doped',   'color': (0, 158/255, 115/255), 'alpha': 0.4}, # Bluish Green
+        # {'label': 'Ne-doped He', 'species': 'Ne',  'mode': 'doped',   'color': (0, 158/255, 115/255), 'alpha': 0.4}, # Bluish Green
         {'label': 'Ar-doped He',   'species': 'Ar',  'mode': 'doped',   'color': (0, 114/255, 178/255), 'alpha': 0.4}  # Blue
     ]
     
@@ -1157,16 +1157,12 @@ def plot_pure_he_emittance_histogram(a0_target):
 # ==========================================
 
 if __name__ == "__main__":
-    # plot_energy_divergence_comparison(a0)
-    # plot_energy_spectra_comparison(a0)
-
-    # plot_e_density(a0, 'Ar')
-    plot_dopant_emittance_histogram(a0_target=a0, dopant_species='Ar')
-    # plot_xy(a0, 'Ar')
+    plot_energy_divergence_comparison(a0)
+    plot_energy_spectra_comparison(a0)
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-        # plot_dopant_emittance_histogram(a0_target=a0, dopant_species=species)
-        # plot_e_density(a0_target=a0, dopant_species=species)
+        plot_dopant_emittance_histogram(a0_target=a0, dopant_species=species)
+        plot_e_density(a0_target=a0, dopant_species=species)
         pass
     

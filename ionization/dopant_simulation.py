@@ -14,6 +14,7 @@ python dopant_type_simulation.py
 # -------
 import numpy as np
 import os
+import argparse
 from scipy.constants import c, e, m_e, m_p, epsilon_0, pi
 from fbpic.main import Simulation
 from fbpic.utils.random_seed import set_random_seed
@@ -27,28 +28,39 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # CONFIGURATION PARAMETERS
 # ==========================================
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Run LWFA simulation with dopant')
+parser.add_argument('--a0', type=float, default=2.5, help='Laser normalized amplitude')
+parser.add_argument('--ne', type=float, default=2.5e23, help='Target electron density in m^-3')
+parser.add_argument('--mode', type=str, default='doped', choices=['pure_he', 'doped'], help='Simulation mode')
+parser.add_argument('--dopant', type=str, default='N', choices=['N', 'Ne', 'Ar'], help='Dopant species')
+parser.add_argument('--conc', type=float, default=0.01, help='Dopant concentration fraction')
+
+args = parser.parse_args()
+
 # Computational settings
 use_cuda = True
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Target electron density (CONSTANT across all simulations)
-n_e_target = 3.5e17*1.e6  # electrons/m³
+n_e_target = args.ne  # electrons/m³
 
 # Simulation configuration
-mode = 'doped'  # 'pure_he' or 'doped'
-dopant_species = 'Ne'  # 'N', 'Ne', 'Ar'
-dopant_conc = 0.01  # Dopant concentration (fraction)
+mode = args.mode  # 'pure_he' or 'doped'
+dopant_species = args.dopant  # 'N', 'Ne', 'Ar'
+dopant_conc = args.conc  # Dopant concentration (fraction)
 
 # Laser parameters
-a0 = 2.5  # Laser normalized amplitude
+a0 = args.a0  # Laser normalized amplitude
 lambda0 = 0.8e-6  # Laser wavelength (m)
-w0 = 5.e-6        # Laser waist (m)
-tau = 16.e-15     # Laser duration (s)
+w0 = 40.e-6       # Laser waist (m)
+tau = 100.e-15    # Laser duration (s)
 z0 = -5.e-6       # Laser centroid (m)
 z_foc = 20.e-6    # Focal position (m)
 
 # Plasma structure
 p_zmin = 0.e-6       # Start of plasma (m)
+ramp_length = 20.e-6  # Length of entrance ramp (m)
 ramp_length = 20.e-6  # Length of entrance ramp (m)``
 
 # Particle resolution per cell
@@ -67,7 +79,7 @@ use_restart = False
 track_electrons = False # I TURNED IT OFF
 
 # Simulation length
-L_interact = 80.e-6  # Interaction length (m)
+L_interact = 1.e-3  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -105,7 +117,7 @@ if mode == 'pure_he':
     # Pure Helium case: n_He * Z_He = n_e_target
     n_He = n_e_target / Z_He
     n_dopant = 0.0
-    print(f"Mode: Pure Helium (a0={a0})")
+    print(f"Mode: Pure Helium (a0={a0}, ne={n_e_target:.2e})")
     print(f"  n_He: {n_He:.4e} m^-3")
     print(f"  n_dopant: 0.0000e+00 m^-3")
     
@@ -121,7 +133,7 @@ elif mode == 'doped':
     n_He = n_gas_total * (1.0 - dopant_conc)
     n_dopant = n_gas_total * dopant_conc
     
-    print(f"Mode: {name_dopant}-Doped Helium (a0={a0}, conc={dopant_conc*100}%)")
+    print(f"Mode: {name_dopant}-Doped Helium (a0={a0}, ne={n_e_target:.2e}, conc={dopant_conc*100}%)")
     print(f"  n_He: {n_He:.4e} m^-3")
     print(f"  n_{dopant_species} : {n_dopant:.4e} m^-3")
 
@@ -149,13 +161,9 @@ skin_depth = c / omega_p
 # ==========================================
 
 # Box dimensions
-zmax = 10.e-6
-zmin = -30.e-6
-rmax = 20.e-6
-# Bigger box 60 µm
-# zmax = 15.e-6
-# zmin = -45.e-6
-# rmax = 15.e-6
+zmax = 30.e-6
+zmin = -100.e-6
+rmax = 120.e-6
 
 # Calculate box lengths
 Lz = zmax - zmin
@@ -166,13 +174,13 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 30
+dz_target = lambda0 / 10
 Nz = int(np.ceil(Lz / dz_target))
 
 print(dz_target, Nz)
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 30
+dr_target = skin_depth / 10
 Nr = int(np.ceil(Lr / dr_target))
 
 print(dr_target, Nr)
@@ -323,8 +331,14 @@ if __name__ == '__main__':
     # DIAGNOSTICS
     # ==========================================
     
+    
     # Output directory
-    write_dir = f"diags_doped/a{a0}_{mode}_{dopant_species}" if mode == 'doped' else f"diags_doped/a{a0}_{mode}"
+    write_dir_base = f"diags_n{n_e_target:.1e}"
+    if mode == 'doped':
+        write_dir = os.path.join(write_dir_base, f"a{a0}_doped_{dopant_species}")
+    else:
+        write_dir = os.path.join(write_dir_base, "a{a0:.1e}_pure_he")
+        
     if not os.path.exists(write_dir):
         os.makedirs(write_dir)
     
