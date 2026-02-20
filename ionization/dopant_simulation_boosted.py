@@ -1,12 +1,13 @@
 """
 Simulation Script for Ionization Injection for different dopant Types
+(Boosted Frame Version)
 
 This script performs simulations for ionisation injection using different dopant types.
 The user defines either Pure Helium or Nitrogen-Doped Helium to isolate the injection signal, dopant type, and concentration.
 
 Usage:
 ------
-python dopant_type_simulation.py
+python dopant_simulation_boosted.py
 """
 
 # -------
@@ -20,8 +21,10 @@ from fbpic.main import Simulation
 from fbpic.utils.random_seed import set_random_seed
 from fbpic.lpa_utils.laser import add_laser_pulse
 from fbpic.lpa_utils.laser.laser_profiles import GaussianLaser
+from fbpic.lpa_utils.boosted_frame import BoostConverter
 from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
-    ParticleChargeDensityDiagnostic, set_periodic_checkpoint, restart_from_checkpoint
+    ParticleChargeDensityDiagnostic, set_periodic_checkpoint, restart_from_checkpoint, \
+    BackTransformedFieldDiagnostic, BackTransformedParticleDiagnostic
 
 
 # ==========================================
@@ -41,6 +44,10 @@ args = parser.parse_args()
 # Computational settings
 use_cuda = True
 n_order = -1  # -1 for infinite order (single GPU)
+
+# Boosted Frame Settings
+gamma_boost = 10.
+boost = BoostConverter(gamma_boost)
 
 # Target electron density (CONSTANT across all simulations)
 n_e_target = args.ne  # electrons/m³
@@ -67,13 +74,17 @@ p_nz = 2  # Particles per cell along z
 p_nr = 2  # Particles per cell along r
 p_nt = 4  # Particles per cell along theta
 
-# Moving window
-v_window = c
+# Moving window (Group velocity in plasma)
+v_window = c * np.sqrt(1. - n_e_target / 1.742e27)
+
+# Velocity of the Galilean frame (for suppression of the NCI)
+v_comoving = - c * np.sqrt( 1. - 1./boost.gamma0**2 )
 
 # Diagnostics
-diag_period = 1000 # Higher means less frequent measurements
+N_lab_diag = 50+1  # Number of snapshots in the lab frame
+write_period = 50 # How often the cache flushes to disk
 save_checkpoints = True
-checkpoint_period = 10000
+checkpoint_period = 1000
 use_restart = False
 track_electrons = True
 
@@ -113,7 +124,6 @@ else:
 
 # Calculate densities based on mode
 if mode == 'pure_he':
-    # Pure Helium case: n_He * Z_He = n_e_target
     n_He = n_e_target / Z_He
     n_dopant = 0.0
     print(f"Mode: Pure Helium (a0={a0}, ne={n_e_target:.2e})")
@@ -121,10 +131,6 @@ if mode == 'pure_he':
     print(f"  n_dopant: 0.0000e+00 m^-3")
     
 elif mode == 'doped':
-    # Doped case: n_He * Z_He + n_dopant * Z_dopant_bg = n_e_target
-    # where n_dopant = n_gas_total * dopant_conc
-    # and n_He = n_gas_total * (1 - dopant_conc)
-    
     Z_dopant_bg = bg_charge[dopant_species]
     effective_Z = (1.0 - dopant_conc) * Z_He + (dopant_conc * Z_dopant_bg)
     n_gas_total = n_e_target / effective_Z
@@ -176,23 +182,15 @@ Lr = rmax
 dz_target = lambda0 / 10
 Nz = int(np.ceil(Lz / dz_target))
 
-print(dz_target, Nz)
-
 # Radial resolution: no points per plasma skin depth
 dr_target = skin_depth / 10
 Nr = int(np.ceil(Lr / dr_target))
 
-print(dr_target, Nr)
-
 # Number of azimuthal modes
 Nm = 2
 
-# Timestep
-dt = (zmax - zmin) / Nz / c
-
-# Interaction time
-T_interact = (L_interact + Lz) / v_window
-N_step = int(T_interact / dt)
+# Timestep adjusted for boosted frame calculation
+dt = min( rmax/(2*boost.gamma0*Nr)/c, (zmax-zmin)/Nz/c )
 
 # ==========================================
 # TRANSVERSE PARABOLIC DENSITY PROFILE
@@ -233,66 +231,59 @@ def dens_func(z, r):
 
 if __name__ == '__main__':
     
-    # Set random seed for reproducibility``
+    # Set random seed for reproducibility
     set_random_seed(0)
     
-    # Initialize simulation
+    # Initialize simulation with boosted frame parameters
     sim = Simulation(Nz, zmax, Nr, rmax, Nm, dt, 
                      zmin=zmin,
+                     v_comoving=v_comoving, gamma_boost=boost.gamma0,
                      n_order=n_order, 
                      use_cuda=use_cuda,
                      boundaries={'z': 'open', 'r': 'reflective'})
+    
+    # Calculate N_step using the boosted frame timestep
+    T_interact_boost = boost.interaction_time( L_interact, Lz, v_window )
+    N_step = int(T_interact_boost / sim.dt)
     
     # ==========================================
     # ADD PARTICLES
     # ==========================================
     
-    # 1. Helium Ions (Pre-ionized He2+)
-    # We assume He is fully ionized by the laser foot, so we start with He2+ ions
     print("Adding Helium ions (He2+)...")
     atoms_he = sim.add_new_species(
         q=2*e, m=m_He, n=n_He,
-        dens_func=dens_func,
+        dens_func=dens_func, boost_positions_in_dens_func=True,
         p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
         p_zmin=p_zmin
     )
     
-    # 2. Dopant Ions (Pre-ionized to background level)
     atoms_dopant = None
     if n_dopant > 0:
         q_dopant = bg_charge[dopant_species] * e
         print(f"Adding {name_dopant} ions (Charge {bg_charge[dopant_species]}+)...")
         atoms_dopant = sim.add_new_species(
             q=q_dopant, m=m_dopant, n=n_dopant,
-            dens_func=dens_func,
+            dens_func=dens_func, boost_positions_in_dens_func=True,
             p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
             p_zmin=p_zmin
         )
     
-    # 3. Electron Species
-    # Bulk electrons: Neutralize the pre-ionized ions (He2+ and Dopant^Z+)
-    # These form the wakefield.
     print(f"Adding bulk electrons (n_e = {n_e_total:.2e})...")
     electrons_bulk = sim.add_new_species(
         q=-e, m=m_e, n=n_e_total,
-        dens_func=dens_func,
+        dens_func=dens_func, boost_positions_in_dens_func=True,
         p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
         p_zmin=p_zmin
     )
     
-    # Injected electrons: Initially empty.
-    # These will be born from further ionization of the dopant.
     electrons_injected = sim.add_new_species(q=-e, m=m_e)
     
     # ==========================================
     # ACTIVATE FIELD IONIZATION
     # ==========================================
     
-    # Helium is fully ionized (He2+), so no further ionization source.
-    
-    # Dopant ionizes further -> electrons_injected
     if atoms_dopant:
-        # Start ionization from the background level
         level_start = bg_charge[dopant_species]
         print(f"Activating ionization for {dopant_species} from level {level_start}...")
         atoms_dopant.make_ionizable(dopant_species, target_species=electrons_injected, level_start=level_start)
@@ -303,25 +294,24 @@ if __name__ == '__main__':
     
     print(f"Adding laser pulse (a0={a0})...")
     laser_profile = GaussianLaser(a0=a0, waist=w0, tau=tau, z0=z0, zf=z_foc, lambda0=lambda0)
-    add_laser_pulse(sim, laser_profile)
+    add_laser_pulse(sim, laser_profile, gamma_boost=boost.gamma0, method='antenna', z0_antenna=0)
     
     # ==========================================
     # MOVING WINDOW & CHECKPOINTS
     # ==========================================
     
     if use_restart is False:
-        # Track injected electrons if required
         if track_electrons:
             print("Tracking injected electrons enabled.")
             electrons_injected.track(sim.comm)
     else:
-        # Load the fields and particles from the latest checkpoint file
         print("Restarting from checkpoint...")
         restart_from_checkpoint(sim)
 
-    sim.set_moving_window(v=v_window)
+    # Convert window velocity to boosted frame
+    v_window_boosted, = boost.velocity([v_window])
+    sim.set_moving_window(v=v_window_boosted)
     
-    # Add checkpoints
     if save_checkpoints:
         print(f"Checkpoints enabled (every {checkpoint_period} steps).")
         set_periodic_checkpoint(sim, checkpoint_period)
@@ -330,7 +320,6 @@ if __name__ == '__main__':
     # DIAGNOSTICS
     # ==========================================
     
-    
     # Output directory
     write_dir_base = f"diags_n{n_e_target:.1e}"
     if mode == 'doped':
@@ -338,37 +327,32 @@ if __name__ == '__main__':
     else:
         write_dir = os.path.join(write_dir_base, "a{a0}_pure_he")
 
+    # Time interval between diagnostics *in the lab frame*
+    # Note: N_lab_diag - 1 to ensure we cover the range
+    dt_lab_diag_period = (L_interact + Lz) / v_window / (N_lab_diag - 1)
+    
+    print(f"Diagnostics: {N_lab_diag} lab-frame snapshots over {L_interact*1e3:.1f} mm.")
 
-    
-    # Field Diagnostics
-    sim.diags = [
-        FieldDiagnostic(period=diag_period, fldobject=sim.fld, 
-                        comm=sim.comm,
-                        write_dir=write_dir)
-    ]
-    
-    # Particle Diagnostics
-    # electrons_bulk: The wakefield driver
-    # electrons_injected: The accelerated bunch
     species_dict = {'electrons_bulk': electrons_bulk, 'electrons_injected': electrons_injected}
-    
-    sim.diags.append(
-        ParticleDiagnostic(period=diag_period, species=species_dict,
-                           comm=sim.comm, 
-                           write_dir=write_dir)
-    )
 
-    # Particle Charge Density Diagnostic - To get proper electron density
-    sim.diags.append(
-        ParticleChargeDensityDiagnostic(period=diag_period, sim=sim,
-                                        species=species_dict,
-                                        write_dir=write_dir)
-    )
+    # Diagnostics in the lab frame (back-transformed from simulation frame to lab frame)
+    # saving particles separately allows reconstruction of species density (rho_electrons_bulk, etc.) in post-processing
+    sim.diags = [
+        BackTransformedFieldDiagnostic(zmin, zmax, v_window,
+            dt_lab_diag_period, N_lab_diag, boost.gamma0,
+            fieldtypes=['rho_electrons_bulk', 'rho_electrons_injected','E','B'], period=write_period,
+            fldobject=sim.fld, comm=sim.comm, write_dir=write_dir),
+
+        BackTransformedParticleDiagnostic(zmin, zmax, v_window,
+            dt_lab_diag_period, N_lab_diag, boost.gamma0,
+            write_period, sim.fld, species=species_dict, 
+            comm=sim.comm, write_dir=write_dir)
+    ]
     
     # ==========================================
     # RUN SIMULATION
     # ==========================================
     
-    print(f"Running simulation for {N_step} steps...")
+    print(f"Running simulation for {N_step} steps in the boosted frame (gamma={boost.gamma0})...")
     sim.step( N_step )
     print("Simulation complete.")

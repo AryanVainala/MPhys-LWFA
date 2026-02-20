@@ -21,14 +21,14 @@ import lwfa_theory as theory
 # =====================================
 
 # Laser parameters
-a0 = 2.5          # Normalized laser amplitude
-lambda0 = 0.8e-6   # Laser wavelength (m)
-w0 = 40.e-6         # Laser waist (m)
-tau = 100.e-15      # Laser duration (s)
+a0 = 2.5            # Normalized laser amplitude
+lambda0 = 0.8e-6    # Laser wavelength (m)
+w0 = 30.e-6         # Laser waist (m)
+tau = 60.e-15      # Laser duration (s)
 
 # Target electron density (after full ionization)
 # This is the controlled variable across all three gas simulations
-n_e = 2.5e23      # electrons/m3
+n_e = 2.5e23        # electrons/m3
 
 # =====================================
 # THEORETICAL CALCULATIONS

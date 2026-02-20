@@ -140,7 +140,7 @@ def plot_e_density(a0_target, dopant_species):
         return
 
     # Use last iteration or change it
-    iteration_idx = -1
+    iteration_idx = -20
     iteration = ts.iterations[iteration_idx]
     t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
     
@@ -204,11 +204,11 @@ def plot_e_density(a0_target, dopant_species):
     sample_region = int(z_indices * 0.9) 
     
     # Take the median of the far-right region to exclude any weird noise spikes
-    n0 = np.median(n_bulk[:, sample_region:])
+    # n0 = np.median(n_bulk[:, sample_region:])
 
     # Normalise the densities
-    n_bulk = -rho / e / n0
-    n_inj =  -rho_inj / e / n0
+    n_bulk = -rho / e / n_e_target
+    n_inj =  -rho_inj / e / n_e_target
 
     # Layer 1: Plasma Density (Bulk)
     im_rho = ax.imshow(n_bulk,
@@ -262,8 +262,8 @@ def plot_e_density(a0_target, dopant_species):
                            aspect='auto',
                            cmap=cmap_inj,
                            interpolation='bilinear',
-                           vmin = np.percentile(n_inj, 98.99),   # For Neon clip it np.percentile(n_inj, 98.99)  |  Otherwise np.percentile(n_inj, 0)
-                           vmax = np.percentile(n_inj, 99.99)    # and np.percentile(n_inj, 99.9)                |  and  np.percentile(n_inj, 0)
+                           vmin = np.percentile(n_inj, 0),   # For Neon clip it np.percentile(n_inj, 98.99)  |  Otherwise np.percentile(n_inj, 0)
+                           vmax = np.percentile(n_inj, 100)    # and np.percentile(n_inj, 99.9)                |  and  np.percentile(n_inj, 0)
               )
         
         # Horizontal colorbar for injected electrons at bottom right
@@ -1157,12 +1157,15 @@ def plot_pure_he_emittance_histogram(a0_target):
 # ==========================================
 
 if __name__ == "__main__":
-    plot_energy_divergence_comparison(a0)
-    plot_energy_spectra_comparison(a0)
+    # plot_energy_divergence_comparison(a0)
+    # plot_energy_spectra_comparison(a0)
+
+    plot_e_density(2.5, 'Ar')
+
 
     # Run detailed plots for each dopant at fixed a0
     for species in dopant_list:
-        plot_dopant_emittance_histogram(a0_target=a0, dopant_species=species)
-        plot_e_density(a0_target=a0, dopant_species=species)
+        # plot_dopant_emittance_histogram(a0_target=a0, dopant_species=species)
+        # plot_e_density(a0_target=a0, dopant_species=species)
         pass
     
