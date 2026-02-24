@@ -31,7 +31,7 @@ plt.rcParams.update({
 # ==========================================
 # CONFIGURATION
 # ==========================================
-base_dir = './diags_doped'
+base_dir = './Archived/diags_n2.5e+23'
 
 # ==========================================
 # DATA LOADING

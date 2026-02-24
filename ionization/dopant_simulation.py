@@ -78,7 +78,7 @@ use_restart = False
 track_electrons = True
 
 # Simulation length
-L_interact = 78e-3  # Interaction length (m)
+L_interact = 78e-6  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -173,13 +173,13 @@ Lr = rmax
 # ==========================================
 
 # Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 10
+dz_target = lambda0 / 30
 Nz = int(np.ceil(Lz / dz_target))
 
 print(dz_target, Nz)
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 10
+dr_target = skin_depth / 30
 Nr = int(np.ceil(Lr / dr_target))
 
 print(dr_target, Nr)
@@ -350,10 +350,10 @@ if __name__ == '__main__':
     # Particle Diagnostics
     # electrons_bulk: The wakefield driver
     # electrons_injected: The accelerated bunch
-    species_dict = {'electrons_bulk': electrons_bulk, 'electrons_injected': electrons_injected}
+    # N.b we can avoid dumping the bulk in ParticleDiagnostic - usually only interested in tracking bunch.
     
     sim.diags.append(
-        ParticleDiagnostic(period=diag_period, species=species_dict,
+        ParticleDiagnostic(period=diag_period, species={'electrons_bulk': electrons_bulk, 'electrons_injected': electrons_injected},
                            comm=sim.comm, 
                            write_dir=write_dir)
     )
@@ -361,7 +361,7 @@ if __name__ == '__main__':
     # Particle Charge Density Diagnostic - To get proper electron density
     sim.diags.append(
         ParticleChargeDensityDiagnostic(period=diag_period, sim=sim,
-                                        species=species_dict,
+                                        species={'electrons_bulk': electrons_bulk, 'electrons_injected': electrons_injected},
                                         write_dir=write_dir)
     )
     

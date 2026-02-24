@@ -39,7 +39,7 @@ plt.rcParams.update({
 a0 = 2.5  # Fixed a0 value
 modes = ['pure_he', 'doped']
 dopant_list = ['N', 'Ar']  # List of dopants to compare
-base_dir = './diags_n2.5e+23'
+base_dir = './Archived/diags_n2.5e+23'
 
 # Physical parameters
 n_e_target = 2.5e23
@@ -132,154 +132,138 @@ def plot_e_density(a0_target, dopant_species):
 
     mode = 'doped'
 
-    # Load Data (Assuming load_data is defined elsewhere in your scope)
+    # Load Data
     ts = load_data(a0_target, dopant_species, mode)
 
     if ts is None:
         print("Data Not Available")
         return
 
-    # Use last iteration or change it
-    iteration_idx = -20
+    # Use last iteration (or change to -1, -20, etc.)
+    iteration_idx = -1
     iteration = ts.iterations[iteration_idx]
     t_ps = ts.t[ts.iterations.tolist().index(iteration)] * 1e12
     
-    # --- 1. GET PLASMA DENSITY ---
-    # Try to get bulk electrons specifically to avoid plotting injected electrons in the background
+    # --- 1. GET BULK ELECTRON DENSITY ---
     try:
-        rho, info_rho = ts.get_field(field='rho_electrons_bulk', iteration=iteration)
-        print("Using 'rho_electrons_bulk' for wakefield structure.")
-    except:
-        print("Could not find 'rho_electrons_bulk', falling back to total 'rho'.")
-        rho, info_rho = ts.get_field(field='rho', iteration=iteration)
+        # The error message confirmed this field exists!
+        rho_bulk, info_rho = ts.get_field(field='rho_electrons_bulk', iteration=iteration)
+    except Exception as exception:
+        print(f"Could not load 'rho_electrons_bulk': {exception}")
+        return
     
-    # Get coordinates for extent
     z_rho = info_rho.z * 1e6 # Convert to microns
     r_rho = info_rho.r * 1e6
     extent_rho = [z_rho.min(), z_rho.max(), r_rho.min(), r_rho.max()]
 
+    # --- NORMALIZATION FIX ---
+    # Do NOT calculate n0 from the grid (which caused the divide-by-zero error).
+    # Use the known target density.
+    # rho = -e * n  =>  n = -rho / e
+    n_bulk = -rho_bulk / (e * n_e_target)
+
     # --- 2. GET LASER ENVELOPE ---
     laser, info_laser = ts.get_laser_envelope(iteration=iteration, pol='x', m=1)
     
-    # Get coordinates for laser extent (CRITICAL FOR ALIGNMENT)
-    z_laser = info_laser.z * 1e6 # Convert to microns
+    z_laser = info_laser.z * 1e6 
     r_laser = info_laser.r * 1e6
     extent_laser = [z_laser.min(), z_laser.max(), r_laser.min(), r_laser.max()]
 
     # --- 3. GET ELECTRIC FIELD Ez ---
     Ez, info_Ez = ts.get_field(field='E', coord='z', iteration=iteration, m=0, slice_across='r')
-    z_Ez = info_Ez.z * 1e6 # Convert to microns
-    Ez_GV = Ez / 1e9       # Convert to GV/m
+    z_Ez = info_Ez.z * 1e6
+    Ez_GV = Ez / 1e9       
 
     # --- 4. GET INJECTED ELECTRON DENSITY ---
     n_inj = None
-    extent_inj = None
+    extent_inj = extent_rho
     try:
+        # The error message confirmed this field exists too!
         rho_inj, info_inj = ts.get_field(field='rho_electrons_injected', iteration=iteration)
-        z_inj = info_inj.z * 1e6
-        r_inj = info_inj.r * 1e6
-        extent_inj = [z_inj.min(), z_inj.max(), r_inj.min(), r_inj.max()]
+        
+        # Normalize: n = -rho / e / n_target
+        n_inj = -rho_inj / (e * n_e_target)
+        
+        # Update extent if slightly different (usually identical)
+        z_inj_ax = info_inj.z * 1e6
+        r_inj_ax = info_inj.r * 1e6
+        extent_inj = [z_inj_ax.min(), z_inj_ax.max(), r_inj_ax.min(), r_inj_ax.max()]
+            
     except Exception as err:
-        print(f"Could not load injected electrons: {err}")
+        print(f"Could not load injected electrons field: {err}")
 
     # --- PLOTTING ---
-    # Use gridspec for proper colorbar placement
     fig = plt.figure(figsize=(12, 12))
     
-    # Create gridspec: main plot on top, two colorbars at the bottom
+    # 2x2 Grid: Main Plot on top, Colorbars below
     gs = fig.add_gridspec(2, 2, height_ratios=[1, 0.05], width_ratios=[1, 1],
-                          hspace=0.4, wspace=0.3)
+                          hspace=0.3, wspace=0.3)
     
-    ax = fig.add_subplot(gs[0, :])  # Main plot spans both columns
-    ax.set_axisbelow(True)          # Ensure grid lines are behind data
-    cax_bulk = fig.add_subplot(gs[1, 0])  # Left colorbar for bulk
-    cax_inj = fig.add_subplot(gs[1, 1])   # Right colorbar for injected
+    ax = fig.add_subplot(gs[0, :])       # Main plot spans both columns
+    cax_bulk = fig.add_subplot(gs[1, 0]) # Left colorbar
+    cax_inj = fig.add_subplot(gs[1, 1])  # Right colorbar
 
-    # Convert to relative density
-    n_bulk = -rho / e
-    n_inj =  -rho_inj / e
+    ax.set_axisbelow(True)          
 
-    # Calculate n0
-    z_indices = n_bulk.shape[1]
-    sample_region = int(z_indices * 0.9) 
-    
-    # Take the median of the far-right region to exclude any weird noise spikes
-    # n0 = np.median(n_bulk[:, sample_region:])
-
-    # Normalise the densities
-    n_bulk = -rho / e / n_e_target
-    n_inj =  -rho_inj / e / n_e_target
-
-    # Layer 1: Plasma Density (Bulk)
+    # Layer 1: Bulk Plasma Density
+    # vmin=0 (bubble), vmax=1.5 (sheath/spikes) relative to background
     im_rho = ax.imshow(n_bulk,
                        extent=extent_rho,
                        origin='lower',
                        aspect='auto',
                        cmap=cmc.grayC_r,
                        interpolation='bilinear',
-                       vmin = np.percentile(n_bulk, 0.01), # set as 0.01 for Neon otherwise 0
-                       vmax = np.percentile(n_bulk, 99.9)
+                       vmin=0.0, 
+                       vmax=2.0 
             )
     im_rho.cmap.set_over('black')
 
-    # Horizontal colorbar for bulk density at bottom left
     cbar = plt.colorbar(im_rho, cax=cax_bulk, orientation='horizontal')
     cbar.set_label(r'Bulk Plasma: $n_e/n_0$', fontsize=14)
 
-    # Layer 2: Laser envelope (Middle Layer)
-    cmp_laser = get_transparent_inferno(
-        n_bins=512,
-        desat_factor=0.1,
-        x0=0.2,     # move transition toward higher intensities
-        k=12.0,      # larger k = softer, more gradual fade
-        alpha_min=0.0,  # 0 means outskirts are fully transparent
-        alpha_max=0.85)
+    # Layer 2: Laser envelope 
+    cmp_laser = get_transparent_inferno(n_bins=512, desat_factor=0.1, x0=0.2, k=12.0, alpha_min=0.0, alpha_max=0.85)
 
-    im_laser = ax.imshow(laser,
-                         cmap=cmp_laser,
-                         interpolation='bicubic',
-                         extent=extent_laser,
-                         origin='lower',
-                         aspect='auto',
-                         vmin=0)
+    im_laser = ax.imshow(laser, cmap=cmp_laser, interpolation='bicubic',
+                         extent=extent_laser, origin='lower', aspect='auto', vmin=0)
 
-    # Layer 1.5: Injected Electrons (Top Layer)
-    im_inj = None
+    # Layer 3: Injected Electrons (Field Data)
     if n_inj is not None:
-
-        # Create a transparent-to-hot colormap
         n_bins_inj = 5000
+        # Create Blue-Green colormap
         colors_inj = plt.cm.BuGn(np.linspace(0.9, 1, n_bins_inj))
-        # colors_inj[:50, 3] = np.linspace(0, 0.7, 50)  # Faster transparency fade at low values
-        # colors_inj[50:, 3] = np.linspace(0.5, 0.9, n_bins_inj-50)  # Rest is more opaque
+        
+        # Create alpha gradient (transparent at low density)
         alpha_curve = np.linspace(0, 1, n_bins_inj) ** 0.5
-        colors_inj[:, 3] = alpha_curve
+        colors_inj[:, 3] = alpha_curve 
+        
         cmap_inj = LinearSegmentedColormap.from_list('blues_alpha', colors_inj)
 
+        # Dynamic vmin/vmax based on what's in the array
+        max_inj = np.max(n_inj)
+        if max_inj <= 0: max_inj = 1.0
+        
         im_inj = ax.imshow(n_inj,
                            extent=extent_inj,
                            origin='lower',
                            aspect='auto',
                            cmap=cmap_inj,
                            interpolation='bilinear',
-                           vmin = np.percentile(n_inj, 0),   # For Neon clip it np.percentile(n_inj, 98.99)  |  Otherwise np.percentile(n_inj, 0)
-                           vmax = np.percentile(n_inj, 100)    # and np.percentile(n_inj, 99.9)                |  and  np.percentile(n_inj, 0)
+                           vmin=0,   
+                           vmax=np.percentile(n_inj[n_inj > 0], 99.9) if np.any(n_inj > 0) else 1.0
               )
         
-        # Horizontal colorbar for injected electrons at bottom right
         cbar_inj = plt.colorbar(im_inj, cax=cax_inj, orientation='horizontal')
         cbar_inj.set_label(r'Injected Electrons: $n_e/n_0$', fontsize=14)
     else:
-        cax_inj.axis('off')  # Hide if no injected electrons
+        cax_inj.axis('off')  
 
     # --- TWIN AXIS FOR Ez ---
     ax2 = ax.twinx()
-    
-    # Plot Ez on top
     ax2.plot(z_Ez, Ez_GV, color="#0606B6", linewidth=1.5, alpha=0.9, label='$E_z$')
     ax2.axhline(0, color='white', linestyle='--', linewidth=0.5, alpha=0.3)
     
-    # Manually setting x-limits ensures both plots are locked to the same view
+    # Sync limits
     ax.set_xlim(z_rho.min(), z_rho.max())
     
     # Labels
@@ -287,13 +271,10 @@ def plot_e_density(a0_target, dopant_species):
     ax.set_ylabel(r'$r \; (\mu m)$')
     ax.set_title(f"{dopant_species}-Doped He Wakefield at (t = {t_ps:.2f} ps)")
     
-    # Right Axis Styling
     ax2.set_ylabel(r'$E_z$ (GV/m)', color='#0606B6')
     ax2.tick_params(axis='y', labelcolor='#0606B6')
     ax2.set_ylim(-1000, 1000)
 
-    # Don't use tight_layout with gridspec - it's already handled
-    
     filename = f'{dopant_species}_wakefield_fixed_last.png'
     plt.savefig(filename, dpi=800, bbox_inches='tight')
     print(f"Saved: {filename}")

@@ -183,7 +183,8 @@ dz_target = lambda0 / 10
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 10
+dr_target = skin_depth / 60
+print('dr',dr_target)
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes
@@ -191,6 +192,9 @@ Nm = 2
 
 # Timestep adjusted for boosted frame calculation
 dt = min( rmax/(2*boost.gamma0*Nr)/c, (zmax-zmin)/Nz/c )
+print('dt=',dt)
+
+print('Rel. CFL=', dr_target / ((2*gamma_boost) * c *dt), 'this MUST be greater than 1')
 
 # ==========================================
 # TRANSVERSE PARABOLIC DENSITY PROFILE
@@ -321,7 +325,7 @@ if __name__ == '__main__':
     # ==========================================
     
     # Output directory
-    write_dir_base = f"diags_n{n_e_target:.1e}"
+    write_dir_base = f"test_n{n_e_target:.1e}"
     if mode == 'doped':
         write_dir = os.path.join(write_dir_base, f"a{a0}_doped_{dopant_species}")
     else:
@@ -354,5 +358,5 @@ if __name__ == '__main__':
     # ==========================================
     
     print(f"Running simulation for {N_step} steps in the boosted frame (gamma={boost.gamma0})...")
-    sim.step( N_step )
+    # sim.step( N_step )
     print("Simulation complete.")
