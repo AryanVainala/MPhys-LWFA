@@ -12,11 +12,9 @@ import matplotlib as mpl
 import cmcrameri.cm as cmc
 import matplotlib.colors as mcolors
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-from openpmd_viewer import OpenPMDTimeSeries
 from openpmd_viewer.addons import LpaDiagnostics
 from scipy.constants import c, e, m_e, epsilon_0, pi
 import os
-import sys
 
 # Set publication-quality plot parameters
 plt.rcParams.update({
@@ -159,7 +157,6 @@ def plot_e_density(a0_target, dopant_species):
     # --- NORMALIZATION FIX ---
     # Do NOT calculate n0 from the grid (which caused the divide-by-zero error).
     # Use the known target density.
-    # rho = -e * n  =>  n = -rho / e
     n_bulk = -rho_bulk / (e * n_e_target)
 
     # --- 2. GET LASER ENVELOPE ---
@@ -224,8 +221,13 @@ def plot_e_density(a0_target, dopant_species):
     # Layer 2: Laser envelope 
     cmp_laser = get_transparent_inferno(n_bins=512, desat_factor=0.1, x0=0.2, k=12.0, alpha_min=0.0, alpha_max=0.85)
 
-    im_laser = ax.imshow(laser, cmap=cmp_laser, interpolation='bicubic',
-                         extent=extent_laser, origin='lower', aspect='auto', vmin=0)
+    im_laser = ax.imshow(laser,
+                         cmap=cmp_laser,
+                         interpolation='bicubic',
+                         extent=extent_laser,
+                         origin='lower',
+                         aspect='auto',
+                         vmin=0)
 
     # Layer 3: Injected Electrons (Field Data)
     if n_inj is not None:
