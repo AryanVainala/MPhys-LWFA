@@ -28,6 +28,12 @@ def get_omega_l(lambda0):
     """Calculate laser angular frequency (rad/s)."""
     return 2 * pi * c / lambda0
 
+def get_wakefield_boost(n_e, lambda0):
+    """Calculate the Lorentz factor of the wakefield"""
+    omega_p = get_omega_p(n_e)
+    omega_l = get_omega_l(lambda0)
+    return omega_l / omega_p
+
 def get_critical_e_density(lambda0):
     """Calculate the crit. e- density that laser freq. ω cannot propagate"""
     omega_l = get_omega_l(lambda0)

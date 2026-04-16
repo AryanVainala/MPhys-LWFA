@@ -34,7 +34,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Run LWFA simulation with dopant')
 parser.add_argument('--a0', type=float, default=2.5, help='Laser normalized amplitude')
-parser.add_argument('--ne', type=float, default=2.5e23, help='Target electron density in m^-3')
+parser.add_argument('--ne', type=float, default=2.5e24, help='Target electron density in m^-3')
 parser.add_argument('--mode', type=str, default='doped', choices=['pure_he', 'doped'], help='Simulation mode')
 parser.add_argument('--dopant', type=str, default='N', choices=['N', 'Ne', 'Ar'], help='Dopant species')
 parser.add_argument('--conc', type=float, default=0.01, help='Dopant concentration fraction')
@@ -46,7 +46,7 @@ use_cuda = True
 n_order = -1  # -1 for infinite order (single GPU)
 
 # Boosted Frame Settings
-gamma_boost = 10.
+gamma_boost = 12
 boost = BoostConverter(gamma_boost)
 
 # Target electron density (CONSTANT across all simulations)
@@ -60,14 +60,14 @@ dopant_conc = args.conc  # Dopant concentration (fraction)
 # Laser parameters
 a0 = args.a0  # Laser normalized amplitude
 lambda0 = 0.8e-6  # Laser wavelength (m)
-w0 = 18.7e-6       # Laser waist (m)
-tau = 60.e-15    # Laser duration (s)
-z0 = -18.7e-6       # Laser centroid (m)
-z_foc = -74.8e-6    # Focal position (m)
+w0 = 10e-6        # Laser waist (m)
+tau = 16.e-15     # Laser duration (s)
+z0 = -5.e-6       # Laser centroid (m)
+z_foc = 20.e-6    # Focal position (m)
 
 # Plasma structure
 p_zmin = 0.e-6       # Start of plasma (m)
-ramp_length = 74.8e-6  # Length of entrance ramp (m)
+ramp_length = 20.e-6  # Length of entrance ramp (m)
 
 # Particle resolution per cell
 p_nz = 2  # Particles per cell along z
@@ -82,14 +82,14 @@ v_comoving = - c * np.sqrt( 1. - 1./boost.gamma0**2 )
 
 # Diagnostics
 N_lab_diag = 50+1  # Number of snapshots in the lab frame
-write_period = 50 # How often the cache flushes to disk
-save_checkpoints = True
+write_period = 1000 # How often the cache flushes to disk
+save_checkpoints = False
 checkpoint_period = 1000
 use_restart = False
-track_electrons = True
+track_electrons = False
 
 # Simulation length
-L_interact = 78e-3  # Interaction length (m)
+L_interact = 10e-3  # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -153,22 +153,29 @@ print(f"  Total background n_e: {n_e_total:.4e} m^-3 (Target: {n_e_target:.4e})"
 m_He = 4. * m_p
 
 # ==========================================
-# CALCULATED PLASMA PARAMETERS
+# Derived PARAMETERS
 # ==========================================
+
+# Laser parameters
+omega_l = 2 * pi * c / lambda0
 
 # Plasma parameters at target density
 omega_p = np.sqrt(n_e_target * e**2 / (m_e * epsilon_0))
 lambda_p = 2 * pi * c / omega_p
 skin_depth = c / omega_p
+k_p = omega_p / c
+R_b = 2 * np.sqrt(a0) / k_p
+gamma_wkfl = omega_l / omega_p 
 
 # ==========================================
 # SIMULATION BOX PARAMETERS
 # ==========================================
 
 # Box dimensions
-zmax = 37.e-6
-zmin = -112.e-6
-rmax = 74.8e-6
+zmax = 10e-6
+zmin = 10e-6 - lambda_p*2
+print(f"Box dimensions {zmax} and {zmin}")
+rmax = 2.5 * w0
 
 # Calculate box lengths
 Lz = zmax - zmin
@@ -178,13 +185,12 @@ Lr = rmax
 # GRID RESOLUTION
 # ==========================================
 
-# Axial resolution: no points per laser wavelength
-dz_target = lambda0 / 10
+# Axial resolution: no points per laser wavelength & divided by Lrnz fac.
+dz_target = lambda0 / 300
 Nz = int(np.ceil(Lz / dz_target))
 
 # Radial resolution: no points per plasma skin depth
-dr_target = skin_depth / 60
-print('dr',dr_target)
+dr_target = skin_depth / 30
 Nr = int(np.ceil(Lr / dr_target))
 
 # Number of azimuthal modes
@@ -192,9 +198,6 @@ Nm = 2
 
 # Timestep adjusted for boosted frame calculation
 dt = min( rmax/(2*boost.gamma0*Nr)/c, (zmax-zmin)/Nz/c )
-print('dt=',dt)
-
-print('Rel. CFL=', dr_target / ((2*gamma_boost) * c *dt), 'this MUST be greater than 1')
 
 # ==========================================
 # TRANSVERSE PARABOLIC DENSITY PROFILE
@@ -232,6 +235,9 @@ def dens_func(z, r):
 # ==========================================
 # MAIN SIMULATION
 # ==========================================
+
+print(f"Ratio of Plasma length to box length {L_interact/Lz:.2f} Gamma factor opt. = {np.sqrt(L_interact/Lz):.2f}")
+print(f"Wakfield lorentz factor is, {gamma_wkfl:.2f}, and the safe boost factor should be half this = {gamma_wkfl/2:.2f}")
 
 if __name__ == '__main__':
     
@@ -323,9 +329,8 @@ if __name__ == '__main__':
     # ==========================================
     # DIAGNOSTICS
     # ==========================================
-    
-    # Output directory
-    write_dir_base = f"test_n{n_e_target:.1e}"
+
+    write_dir_base = f"diags_n{n_e_target:.1e}"
     if mode == 'doped':
         write_dir = os.path.join(write_dir_base, f"a{a0}_doped_{dopant_species}")
     else:
@@ -344,7 +349,7 @@ if __name__ == '__main__':
     sim.diags = [
         BackTransformedFieldDiagnostic(zmin, zmax, v_window,
             dt_lab_diag_period, N_lab_diag, boost.gamma0,
-            fieldtypes=['rho_electrons_bulk', 'rho_electrons_injected','E','B'], period=write_period,
+            fieldtypes=['rho','E','B'], period=write_period,
             fldobject=sim.fld, comm=sim.comm, write_dir=write_dir),
 
         BackTransformedParticleDiagnostic(zmin, zmax, v_window,
@@ -358,5 +363,5 @@ if __name__ == '__main__':
     # ==========================================
     
     print(f"Running simulation for {N_step} steps in the boosted frame (gamma={boost.gamma0})...")
-    # sim.step( N_step )
+    sim.step( N_step )
     print("Simulation complete.")

@@ -23,12 +23,12 @@ import lwfa_theory as theory
 # Laser parameters
 a0 = 2.5            # Normalized laser amplitude
 lambda0 = 0.8e-6    # Laser wavelength (m)
-w0 = 7.5e-6         # Laser waist (m)
+w0 = 6e-6         # Laser waist (m)
 tau = 16.e-15      # Laser duration (s)
 
 # Target electron density (after full ionization)
 # This is the controlled variable across all three gas simulations
-n_e = 3.5e24       # electrons/m3
+n_e = 2.5e24       # electrons/m3
 
 # =====================================
 # THEORETICAL CALCULATIONS
@@ -45,6 +45,7 @@ c_over_omega_p = theory.get_skin_depth(n_e)
 n_c = theory.get_critical_e_density(lambda0)
 n_ratio = theory.get_density_ratio(n_e, lambda0)
 r_bubble = theory.get_bubble_radius(a0, n_e)
+gamma_wkfld = theory.get_wakefield_boost(n_e, lambda0)
 
 # Critical power
 P_c = theory.get_critical_power(lambda0, n_e)
@@ -93,7 +94,8 @@ with open(output_filename, 'w') as f:
     f.write(f"  Bubble radius (rb):                  {r_bubble*1e6:.2f} µm\n")
     f.write(f"  Density ratio (n_e/n_c):             {n_ratio:.4e}\n")
     f.write(f"  Plasma status:                       {'UNDERDENSE' if n_e < n_c else 'OVERDENSE'}\n")
-    f.write(f"  Frequency ratio (ωₗ/ωₚ):              {omega_l/omega_p:.4f}\n\n")
+    f.write(f"  Frequency ratio (ωₗ/ωₚ):              {omega_l/omega_p:.4f}\n")
+    f.write(f"  Wakefield Lorentz Factor (𝛾ₚ):        {gamma_wkfld:.4f}\n\n")
     
     f.write("LASER PARAMETERS:\n")
     f.write("-" * 70 + "\n")

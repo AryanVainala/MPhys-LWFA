@@ -31,7 +31,7 @@ from fbpic.openpmd_diag import FieldDiagnostic, ParticleDiagnostic, \
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Run LWFA simulation with dopant')
 parser.add_argument('--a0', type=float, default=2.5, help='Laser normalized amplitude')
-parser.add_argument('--ne', type=float, default=2.5e23, help='Target electron density in m^-3')
+parser.add_argument('--ne', type=float, default=3.5e23, help='Target electron density in m^-3')
 parser.add_argument('--mode', type=str, default='doped', choices=['pure_he', 'doped'], help='Simulation mode')
 parser.add_argument('--dopant', type=str, default='N', choices=['N', 'Ne', 'Ar'], help='Dopant species')
 parser.add_argument('--conc', type=float, default=0.01, help='Dopant concentration fraction')
@@ -53,14 +53,23 @@ dopant_conc = args.conc  # Dopant concentration (fraction)
 # Laser parameters
 a0 = args.a0  # Laser normalized amplitude
 lambda0 = 0.8e-6  # Laser wavelength (m)
-w0 = 18.7e-6       # Laser waist (m)
-tau = 60.e-15    # Laser duration (s)
-z0 = -18.7e-6       # Laser centroid (m)
-z_foc = -74.8e-6    # Focal position (m)
+w0 = 7.5e-6        # Laser waist (m)
+tau = 16.e-15     # Laser duration (s)
+z0 = -5.e-6       # Laser centroid (m)
+z_foc = 20.e-6    # Focal position (m)
+
+# lambda0 = 0.8e-6  # Laser wavelength (m)
+# w0 = 15.8e-6       # Laser waist (m)
+# tau = 50.6e-15    # Laser duration (s)
+# z0 = -15.8e-6       # Laser centroid (m)
+# z_foc = 63.2e-6    # Focal position (m)
 
 # Plasma structure
 p_zmin = 0.e-6       # Start of plasma (m)
-ramp_length = 74.8e-6  # Length of entrance ramp (m)
+ramp_length = 20.e-6  # Length of entrance ramp (m)
+
+# p_zmin = 0.e-6       # Start of plasma (m)
+# ramp_length = 63.2e-6  # Length of entrance ramp (m)
 
 # Particle resolution per cell
 p_nz = 2  # Particles per cell along z
@@ -72,13 +81,13 @@ v_window = c
 
 # Diagnostics
 diag_period = 1000 # Higher means less frequent measurements
-save_checkpoints = True
+save_checkpoints = False
 checkpoint_period = 10000
 use_restart = False
 track_electrons = True
 
 # Simulation length
-L_interact = 78e-6  # Interaction length (m)
+L_interact = 15e-3 # Interaction length (m)
 
 # ==========================================
 # GAS DENSITY CALCULATION
@@ -160,9 +169,12 @@ skin_depth = c / omega_p
 # ==========================================
 
 # Box dimensions
-zmax = 37.e-6
-zmin = -112.e-6
-rmax = 74.8e-6
+zmax = 10.e-6
+zmin = -30.e-6
+rmax = 30.e-6
+# zmax = 30.e-6
+# zmin = -95.e-6
+# rmax = 63.e-6
 
 # Calculate box lengths
 Lz = zmax - zmin
@@ -332,7 +344,7 @@ if __name__ == '__main__':
     
     
     # Output directory
-    write_dir_base = f"diags_n{n_e_target:.1e}"
+    write_dir_base = f"diags_n{n_e_target:.1e}_tracked"
     if mode == 'doped':
         write_dir = os.path.join(write_dir_base, f"a{a0}_doped_{dopant_species}")
     else:
